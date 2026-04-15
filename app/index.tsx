@@ -2,13 +2,17 @@ import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { generateWorkout } from '@/lib/generateWorkout';
-import { Attachment, Energy, Focus, TimeOption } from '@/types/workout';
+import {
+  ATTACHMENT_OPTIONS,
+  ENERGY_OPTIONS,
+  FOCUS_OPTIONS,
+  TIME_OPTIONS,
+  Attachment,
+  Energy,
+  Focus,
+  TimeOption
+} from '@/types/workout';
 import { addHistory } from '@/storage/workoutStorage';
-
-const TIMES: TimeOption[] = [15, 20, 25, 30];
-const ENERGIES: Energy[] = ['low', 'normal', 'high'];
-const FOCUSES: Focus[] = ['full body', 'sprint', 'endurance', 'core + back', 'legs + power', 'recovery'];
-const ATTACHMENTS: Attachment[] = ['auto', 'rope', 'strap', 'handles', 'bar'];
 
 function Chip<T extends string | number>({
   label,
@@ -31,12 +35,12 @@ export default function GenerateScreen() {
   const [time, setTime] = useState<TimeOption>(20);
   const [energy, setEnergy] = useState<Energy>('normal');
   const [focus, setFocus] = useState<Focus>('full body');
-  const [attachment, setAttachment] = useState<Attachment>('auto');
+  const [attachment, setAttachment] = useState<Attachment>('recommended');
 
   const preview = useMemo(() => generateWorkout({ time, energy, focus, attachment }), [time, energy, focus, attachment]);
 
   const onGenerate = async () => {
-    const plan = generateWorkout({ time, energy, focus, attachment });
+    const plan = preview;
     await addHistory(plan);
     router.push({ pathname: '/workout', params: { plan: JSON.stringify(plan) } });
   };
@@ -47,20 +51,21 @@ export default function GenerateScreen() {
       <Text style={styles.subtitle}>Forge your daily workout in under 10 seconds.</Text>
 
       <Text style={styles.section}>Time available</Text>
-      <View style={styles.row}>{TIMES.map((option) => <Chip key={option} label={option} active={time === option} onPress={() => setTime(option)} />)}</View>
+      <View style={styles.row}>{TIME_OPTIONS.map((option) => <Chip key={option} label={option} active={time === option} onPress={() => setTime(option)} />)}</View>
 
       <Text style={styles.section}>Energy</Text>
-      <View style={styles.row}>{ENERGIES.map((option) => <Chip key={option} label={option} active={energy === option} onPress={() => setEnergy(option)} />)}</View>
+      <View style={styles.row}>{ENERGY_OPTIONS.map((option) => <Chip key={option} label={option} active={energy === option} onPress={() => setEnergy(option)} />)}</View>
 
       <Text style={styles.section}>Focus</Text>
-      <View style={styles.row}>{FOCUSES.map((option) => <Chip key={option} label={option} active={focus === option} onPress={() => setFocus(option)} />)}</View>
+      <View style={styles.row}>{FOCUS_OPTIONS.map((option) => <Chip key={option} label={option} active={focus === option} onPress={() => setFocus(option)} />)}</View>
 
       <Text style={styles.section}>Attachment</Text>
-      <View style={styles.row}>{ATTACHMENTS.map((option) => <Chip key={option} label={option} active={attachment === option} onPress={() => setAttachment(option)} />)}</View>
+      <View style={styles.row}>{ATTACHMENT_OPTIONS.map((option) => <Chip key={option} label={option} active={attachment === option} onPress={() => setAttachment(option)} />)}</View>
 
       <View style={styles.preview}>
         <Text style={styles.previewTitle}>Preview</Text>
         <Text style={styles.previewText}>{preview.title}</Text>
+        <Text style={styles.previewText}>Attachment: {preview.input.attachment}</Text>
         <Text style={styles.previewText}>Cardio: {preview.cardioBlock[0]}</Text>
         <Text style={styles.previewText}>Main rounds: {preview.mainBlock.rounds}</Text>
       </View>
