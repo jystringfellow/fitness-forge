@@ -1,30 +1,57 @@
-export type TimeOption = 15 | 20 | 25 | 30;
-export type Energy = 'low' | 'normal' | 'high';
-export type Focus =
-  | 'full body'
-  | 'sprint'
-  | 'endurance'
-  | 'core + back'
-  | 'legs + power'
-  | 'recovery';
+export const TIME_OPTIONS = [15, 20, 25, 30] as const;
+export type TimeOption = (typeof TIME_OPTIONS)[number];
 
-export type Attachment = 'auto' | 'rope' | 'strap' | 'handles' | 'bar';
+export const ENERGY_OPTIONS = ['low', 'normal', 'high'] as const;
+export type Energy = (typeof ENERGY_OPTIONS)[number];
+
+export const FOCUS_OPTIONS = [
+  'full body',
+  'core + back',
+  'endurance',
+  'legs + power',
+  'recovery',
+  'sprint'
+] as const;
+export type Focus = (typeof FOCUS_OPTIONS)[number];
+
+export const ATTACHMENT_OPTIONS = [
+  'recommended',
+  'ankle-cuffs',
+  'curl-bar',
+  'dumbbells',
+  'handles',
+  'kettlebell',
+  'rope',
+  'strap',
+  'straight-bar'
+] as const;
+export type Attachment = (typeof ATTACHMENT_OPTIONS)[number];
+export type ConcreteAttachment = Exclude<Attachment, 'recommended'>;
 
 export type ExerciseTag =
-  | 'cardio'
-  | 'plyo'
-  | 'pull'
-  | 'posterior'
-  | 'legs'
-  | 'core'
+  | 'anti-rotation'
   | 'athletic'
+  | 'balance'
+  | 'cardio'
+  | 'conditioning'
+  | 'core'
+  | 'full body'
+  | 'legs'
   | 'mobility'
-  | 'recovery';
+  | 'plyo'
+  | 'power'
+  | 'posterior'
+  | 'posture'
+  | 'pull'
+  | 'push'
+  | 'recovery'
+  | 'sprint'
+  | 'stability';
 
 export interface Exercise {
   id: string;
   name: string;
-  attachment: Exclude<Attachment, 'auto'>;
+  attachment: ConcreteAttachment;
   tags: ExerciseTag[];
   focus: Focus[];
   cue: string;

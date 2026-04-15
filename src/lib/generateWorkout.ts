@@ -1,7 +1,10 @@
 import { CARDIO_LIBRARY, EXERCISES } from '@/data/exercises';
 import {
   Attachment,
+  ConcreteAttachment,
+  Energy,
   Exercise,
+  ExerciseTag,
   Focus,
   GenerateWorkoutInput,
   TimeOption,
@@ -21,23 +24,91 @@ const ENERGY_TO_WORK_REST = {
   high: { work: 45, rest: 15, rounds: 4 }
 } as const;
 
-function pickAttachment(requested: Attachment, focus: Focus): Exclude<Attachment, 'auto'> {
-  if (requested !== 'auto') {
+const FOCUS_TAG_WEIGHTS: Record<Focus, Partial<Record<ExerciseTag, number>>> = {
+  'full body': { 'full body': 3, athletic: 2, core: 1, push: 1, pull: 1, legs: 1 },
+  'core + back': { core: 3, pull: 3, posterior: 2, posture: 2, 'anti-rotation': 2, recovery: 1 },
+  endurance: { conditioning: 3, 'full body': 2, athletic: 2, pull: 1, push: 1, legs: 1 },
+  'legs + power': { legs: 3, power: 3, posterior: 2, athletic: 2, balance: 1 },
+  recovery: { recovery: 4, mobility: 3, stability: 2, posture: 2, core: 2, balance: 2 },
+  sprint: { sprint: 4, power: 3, athletic: 3, conditioning: 2, posterior: 2, legs: 2 }
+};
+
+const ENERGY_TAG_WEIGHTS: Record<Energy, Partial<Record<ExerciseTag, number>>> = {
+  low: { recovery: 3, stability: 2, balance: 2, posture: 2, mobility: 2, core: 1 },
+  normal: { athletic: 1, core: 1, pull: 1, legs: 1, 'full body': 1 },
+  high: { power: 3, athletic: 2, conditioning: 2, sprint: 2, plyo: 2, 'full body': 1 }
+};
+
+function getAttachmentPool(attachment: ConcreteAttachment): Exercise[] {
+  return EXERCISES.filter((exercise) => exercise.attachment === attachment);
+}
+
+function pickRandom<T>(items: T[]): T {
+  return items[Math.floor(Math.random() * items.length)];
+}
+
+function scoreAttachmentRecommendation(
+  attachment: ConcreteAttachment,
+  focus: Focus,
+  energy: Energy
+): number {
+  const focusPool = getAttachmentPool(attachment).filter((exercise) => exercise.focus.includes(focus));
+  if (!focusPool.length) {
+    return Number.NEGATIVE_INFINITY;
+  }
+
+  const allTags = new Set(focusPool.flatMap((exercise) => exercise.tags));
+  let score = focusPool.length * 20;
+
+  if (focusPool.length >= 4) {
+    score += 25;
+  }
+
+  score += Math.min(getAttachmentPool(attachment).length, 5);
+  score += allTags.size * 3;
+
+  for (const exercise of focusPool) {
+    for (const tag of exercise.tags) {
+      score += FOCUS_TAG_WEIGHTS[focus][tag] ?? 0;
+      score += ENERGY_TAG_WEIGHTS[energy][tag] ?? 0;
+    }
+  }
+
+  return score;
+}
+
+function pickAttachment(
+  requested: Attachment,
+  focus: Focus,
+  energy: Energy
+): ConcreteAttachment {
+  if (requested !== 'recommended') {
     return requested;
   }
 
-  const ranked: Exclude<Attachment, 'auto'>[] = ['rope', 'strap', 'handles', 'bar'];
-  const best = ranked.find((attachment) =>
-    EXERCISES.some((exercise) => exercise.attachment === attachment && exercise.focus.includes(focus))
-  );
-  return best ?? 'rope';
+  const attachments = [...new Set(EXERCISES.map((exercise) => exercise.attachment))] as ConcreteAttachment[];
+  const scored = attachments
+    .map((attachment) => ({
+      attachment,
+      score: scoreAttachmentRecommendation(attachment, focus, energy)
+    }))
+    .filter((entry) => Number.isFinite(entry.score));
+
+  if (!scored.length) {
+    return pickRandom(attachments);
+  }
+
+  const bestScore = Math.max(...scored.map((entry) => entry.score));
+  const topAttachments = scored
+    .filter((entry) => entry.score === bestScore)
+    .map((entry) => entry.attachment);
+
+  return pickRandom(topAttachments);
 }
 
-function pickMainExercises(attachment: Exclude<Attachment, 'auto'>, focus: Focus): Exercise[] {
-  const pool = EXERCISES.filter(
-    (exercise) => exercise.attachment === attachment && exercise.focus.includes(focus)
-  );
-  const fallbackPool = EXERCISES.filter((exercise) => exercise.attachment === attachment);
+function pickMainExercises(attachment: ConcreteAttachment, focus: Focus): Exercise[] {
+  const pool = getAttachmentPool(attachment).filter((exercise) => exercise.focus.includes(focus));
+  const fallbackPool = getAttachmentPool(attachment);
   const targetPool = pool.length >= 4 ? pool : fallbackPool;
 
   const picks: Exercise[] = [];
@@ -66,7 +137,7 @@ function pickMainExercises(attachment: Exclude<Attachment, 'auto'>, focus: Focus
 export function generateWorkout(input: GenerateWorkoutInput): WorkoutPlan {
   const split = TIME_SPLIT[input.time];
   const intervals = ENERGY_TO_WORK_REST[input.energy];
-  const attachment = pickAttachment(input.attachment, input.focus);
+  const attachment = pickAttachment(input.attachment, input.focus, input.energy);
   const mainExercises = pickMainExercises(attachment, input.focus);
   const cardioOptions = CARDIO_LIBRARY[input.focus] ?? CARDIO_LIBRARY['full body'];
 
