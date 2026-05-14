@@ -5,10 +5,13 @@ import {
   Energy,
   Exercise,
   ExerciseTag,
+  ExerciseType,
   Focus,
   GenerateWorkoutInput,
   TimeOption,
-  WorkoutPlan
+  WorkoutPlan,
+  WorkoutBlockItem,
+  WorkoutIntervalStep
 } from '@/types/workout';
 
 const TIME_SPLIT: Record<TimeOption, { cardio: number; main: number }> = {
@@ -134,31 +137,286 @@ function pickMainExercises(attachment: ConcreteAttachment, focus: Focus): Exerci
   return picks.slice(0, 5);
 }
 
-export function generateWorkout(input: GenerateWorkoutInput): WorkoutPlan {
+interface ParsedCardioSegment {
+  exercise: string;
+  durationSecs: number;
+  reps?: number;
+  isRest: boolean;
+}
+
+interface ParsedCardioSequence {
+  totalRounds: number;
+  segments: ParsedCardioSegment[];
+}
+
+function isRestLikeExercise(exercise: string): boolean {
+  return /\b(easy|walk|rest|reset|recovery|mobility|nasal-breath)\b/i.test(exercise);
+}
+
+function formatTimedExercise(seconds: number, exercise: string, round: number, totalRounds: number): string {
+  return `${seconds}s ${exercise} ${round}/${totalRounds}`;
+}
+
+function formatRepExercise(reps: number, exercise: string, round: number, totalRounds: number): string {
+  return `${reps} ${exercise} ${round}/${totalRounds}`;
+}
+
+function parseCardioSequence(text: string): ParsedCardioSequence {
+  const leadingRoundsMatch = text.match(/(\d+)\s+rounds?\s+of/i);
+  const trailingRepeatMatch = text.match(/\s+x\s*(\d+)\s*$/i);
+  const repeatMatch = leadingRoundsMatch ?? trailingRepeatMatch;
+  const totalRounds = repeatMatch ? parseInt(repeatMatch[1], 10) : 1;
+  const cleanedText = text
+    .replace(/\s*x\s*\d+\s*$/i, '')
+    .replace(/^\s*\d+\s+rounds?\s+of\s+/i, '')
+    .replace(/[.]+$/g, '')
+    .trim();
+
+  const segments = cleanedText
+    .split(/\s+\+\s+/)
+    .map((segmentText): ParsedCardioSegment => {
+      const segment = segmentText.trim();
+      const secondsMatch = segment.match(/^(\d+)s\s+(.+)$/i);
+      if (secondsMatch) {
+        const exercise = secondsMatch[2].trim();
+        return {
+          exercise,
+          durationSecs: parseInt(secondsMatch[1], 10),
+          isRest: isRestLikeExercise(exercise)
+        };
+      }
+
+      const minutesMatch = segment.match(/^(\d+)\s*min\s+(.+)$/i);
+      if (minutesMatch) {
+        const exercise = minutesMatch[2].trim();
+        return {
+          exercise,
+          durationSecs: parseInt(minutesMatch[1], 10) * 60,
+          isRest: isRestLikeExercise(exercise)
+        };
+      }
+
+      const repsMatch = segment.match(/^(\d+)\s+(.+)$/i);
+      if (repsMatch) {
+        const exercise = repsMatch[2].trim();
+        return {
+          exercise,
+          durationSecs: 0,
+          reps: parseInt(repsMatch[1], 10),
+          isRest: isRestLikeExercise(exercise)
+        };
+      }
+
+      return {
+        exercise: segment,
+        durationSecs: 0,
+        isRest: true
+      };
+    });
+
+  return { totalRounds, segments };
+}
+
+function buildCardioIntervalSteps(cardioOptions: string[]): WorkoutIntervalStep[] {
+  const sequences = cardioOptions.map(parseCardioSequence);
+  const maxRounds = Math.max(...sequences.map((sequence) => sequence.totalRounds), 0);
+  const intervalSteps: WorkoutIntervalStep[] = [];
+
+  for (let round = 1; round <= maxRounds; round += 1) {
+    sequences.forEach((sequence) => {
+      if (round > sequence.totalRounds) {
+        return;
+      }
+
+      sequence.segments.forEach((segment) => {
+        const label = segment.reps
+          ? formatRepExercise(segment.reps, segment.exercise, round, sequence.totalRounds)
+          : formatTimedExercise(segment.durationSecs, segment.exercise, round, sequence.totalRounds);
+
+        intervalSteps.push({
+          text: label,
+          durationSecs: segment.durationSecs,
+          isRest: segment.isRest,
+          round,
+          totalRounds: sequence.totalRounds,
+          exerciseName: segment.exercise,
+          reps: segment.reps,
+          section: 'cardio'
+        });
+      });
+    });
+  }
+
+  return intervalSteps;
+}
+
+function buildOptionalFinisherSteps(note?: string): WorkoutIntervalStep[] {
+  if (!note?.startsWith('Optional finisher:')) {
+    return [];
+  }
+
+  const finisherText = note.replace(/^Optional finisher:\s*/i, '').trim();
+  const finisher = parseCardioSequence(finisherText);
+  const intervalSteps: WorkoutIntervalStep[] = [];
+
+  for (let round = 1; round <= finisher.totalRounds; round += 1) {
+    finisher.segments.forEach((segment) => {
+      const label = segment.reps
+        ? formatRepExercise(segment.reps, segment.exercise, round, finisher.totalRounds)
+        : formatTimedExercise(segment.durationSecs, segment.exercise, round, finisher.totalRounds);
+
+      intervalSteps.push({
+        text: label,
+        durationSecs: segment.durationSecs,
+        isRest: segment.isRest,
+        round,
+        totalRounds: finisher.totalRounds,
+        exerciseName: segment.exercise,
+        reps: segment.reps,
+        section: 'finisher'
+      });
+    });
+  }
+
+  return intervalSteps;
+}
+
+function buildIntervalSteps(
+  cardioOptions: string[],
+  mainBlock: WorkoutPlan['mainBlock'],
+  note?: string
+): WorkoutIntervalStep[] {
+  const intervalSteps: WorkoutIntervalStep[] = [];
+  const finisherSteps = buildOptionalFinisherSteps(note);
+
+  intervalSteps.push(...buildCardioIntervalSteps(cardioOptions));
+  intervalSteps.push({
+    text: 'Ready for Main Block?',
+    durationSecs: 0,
+    isRest: true,
+    section: 'main',
+    isPrompt: true,
+    actionLabel: 'Yes'
+  });
+
+  for (let round = 1; round <= mainBlock.rounds; round += 1) {
+    mainBlock.exercises.forEach((exercise, exerciseIndex) => {
+      const isLastExercise = exerciseIndex === mainBlock.exercises.length - 1;
+      const isLastRound = round === mainBlock.rounds;
+
+      intervalSteps.push({
+        text: `Round ${round}/${mainBlock.rounds}: ${exercise.name}`,
+        durationSecs: mainBlock.workSeconds,
+        isRest: false,
+        round,
+        totalRounds: mainBlock.rounds,
+        exerciseName: exercise.name,
+        section: 'main'
+      });
+
+      if (!isLastExercise || !isLastRound) {
+        intervalSteps.push({
+          text: `${mainBlock.restSeconds}s rest`,
+          durationSecs: mainBlock.restSeconds,
+          isRest: true,
+          round,
+          totalRounds: mainBlock.rounds,
+          section: 'main'
+        });
+      }
+    });
+  }
+
+  if (finisherSteps.length) {
+    intervalSteps.push({
+      text: 'Congrats on finishing the main block! Want to do the optional finisher?',
+      durationSecs: 0,
+      isRest: true,
+      section: 'finisher',
+      isPrompt: true,
+      actionLabel: 'Yes',
+      skipLabel: 'No thanks'
+    });
+    intervalSteps.push(...finisherSteps);
+  }
+
+  return intervalSteps;
+}
+
+export function generateWorkoutPlan(
+  input: GenerateWorkoutInput,
+  includeIntervalSteps = false
+): WorkoutPlan {
   const split = TIME_SPLIT[input.time];
   const intervals = ENERGY_TO_WORK_REST[input.energy];
   const attachment = pickAttachment(input.attachment, input.focus, input.energy);
   const mainExercises = pickMainExercises(attachment, input.focus);
   const cardioOptions = CARDIO_LIBRARY[input.focus] ?? CARDIO_LIBRARY['full body'];
 
+  const parseCardioOption = (text: string): WorkoutBlockItem => {
+    const isRep = text.match(/^\d+\s+(?!min\b)[a-z]/i);
+
+    if (isRep) {
+      const repMatch = text.match(/(\d+)\s+([a-z]+)/i);
+      if (repMatch) {
+        return {
+          text,
+          type: 'rep',
+          value: parseInt(repMatch[1], 10)
+        };
+      }
+    }
+
+    let totalTime = 0;
+    const timeParts = text.match(/(\d+)s/g);
+    if (timeParts) {
+      totalTime = timeParts.reduce((sum, part) => sum + parseInt(part.match(/(\d+)s/)?.[1] || '0', 10), 0);
+    }
+
+    const repeatMatch = text.match(/x\s*(\d+)/i);
+    const repeats = repeatMatch ? parseInt(repeatMatch[1], 10) : 1;
+    const totalDuration = totalTime * repeats;
+
+    return {
+      text,
+      type: 'time',
+      value: totalDuration
+    };
+  };
+
+  const cardioBlock: WorkoutBlockItem[] = [];
+  cardioBlock.push({ text: `${split.cardio} min cardio/plyo`, type: 'time', value: split.cardio * 60 });
+
+  cardioOptions.forEach((option) => {
+    cardioBlock.push(parseCardioOption(option));
+  });
+
+  const mainBlock: WorkoutPlan['mainBlock'] = {
+    rounds: intervals.rounds,
+    workSeconds: intervals.work,
+    restSeconds: intervals.rest,
+    exercises: mainExercises
+  };
+  const note =
+    input.focus === 'recovery'
+      ? 'Finish with 2-3 minutes of slow breathing and thoracic rotation.'
+      : 'Optional finisher: 2 rounds of 20s fast feet + 40s walk.';
+  const intervalSteps = includeIntervalSteps ? buildIntervalSteps(cardioOptions, mainBlock, note) : [];
+
   return {
     title: `${input.time}-min ${input.focus} forge`,
     createdAt: new Date().toISOString(),
     input: { ...input, attachment },
-    cardioBlock: [
-      `${split.cardio} min cardio/plyo`,
-      cardioOptions[0],
-      cardioOptions[1] ?? 'Easy cyclical movement'
-    ],
-    mainBlock: {
-      rounds: intervals.rounds,
-      workSeconds: intervals.work,
-      restSeconds: intervals.rest,
-      exercises: mainExercises
-    },
-    note:
-      input.focus === 'recovery'
-        ? 'Finish with 2-3 minutes of slow breathing and thoracic rotation.'
-        : 'Optional finisher: 2 rounds of 20s fast feet + 40s walk.'
+    cardioBlock,
+    intervalSteps,
+    mainBlock,
+    note
   };
+}
+
+export function generateWorkout(
+  input: GenerateWorkoutInput,
+  includeIntervalSteps = false
+): WorkoutPlan {
+  return generateWorkoutPlan(input, includeIntervalSteps);
 }

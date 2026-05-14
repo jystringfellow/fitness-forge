@@ -12,12 +12,16 @@ export default function FavoritesScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>Favorites</Text>
+      <View style={styles.header}>
+        <Text style={styles.kicker}>{favorites.length} saved</Text>
+        <Text style={styles.title}>Favorites</Text>
+      </View>
       {favorites.length === 0 ? <Text style={styles.empty}>No saved workouts yet.</Text> : null}
       {favorites.map((plan) => (
         <View key={plan.createdAt} style={styles.card}>
           <Text style={styles.name}>{plan.title}</Text>
-          <Text style={styles.detail}>{new Date(plan.createdAt).toLocaleString()}</Text>
+          <Text style={styles.detail}>{plan.input.time} min · {plan.input.focus}</Text>
+          <Text style={styles.date}>{new Date(plan.createdAt).toLocaleString()}</Text>
         </View>
       ))}
     </ScrollView>
@@ -25,11 +29,28 @@ export default function FavoritesScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0A0F1E' },
-  content: { padding: 16, gap: 10 },
-  title: { color: 'white', fontSize: 22, fontWeight: '700' },
-  empty: { color: '#9CA3AF' },
-  card: { backgroundColor: '#111827', borderRadius: 10, padding: 12 },
-  name: { color: '#F9FAFB', fontWeight: '700' },
-  detail: { color: '#9CA3AF' }
+  container: { flex: 1, backgroundColor: '#140B1F' },
+  content: { padding: 18, gap: 12, paddingBottom: 36 },
+  header: { gap: 4, marginBottom: 4 },
+  kicker: { color: '#FBBF24', fontSize: 12, fontWeight: '900', textTransform: 'uppercase' },
+  title: { color: '#FBF7FF', fontSize: 30, fontWeight: '900' },
+  empty: {
+    color: '#CDBBDE',
+    backgroundColor: '#1B1028',
+    borderColor: '#3A2253',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 16
+  },
+  card: {
+    backgroundColor: '#1B1028',
+    borderColor: '#3A2253',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 14,
+    gap: 6
+  },
+  name: { color: '#FBF7FF', fontWeight: '900', fontSize: 16 },
+  detail: { color: '#A6FF3D', fontWeight: '800', textTransform: 'capitalize' },
+  date: { color: '#CDBBDE', fontWeight: '700' }
 });

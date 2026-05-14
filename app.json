@@ -4,6 +4,7 @@
     "slug": "fitness-forge",
     "scheme": "fitnessforge",
     "version": "0.1.0",
+    "icon": "./assets/icon.png",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "plugins": ["expo-router"],
@@ -11,7 +12,8 @@
       "typedRoutes": true
     },
     "web": {
-      "bundler": "metro"
+      "bundler": "metro",
+      "favicon": "./assets/icon.png"
     }
   }
 }
