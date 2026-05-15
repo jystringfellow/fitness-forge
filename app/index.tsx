@@ -13,7 +13,7 @@ import {
   Focus,
   TimeOption
 } from '@/types/workout';
-import { addHistory } from '@/storage/workoutStorage';
+import { addHistory, setCurrentWorkout } from '@/storage/workoutStorage';
 
 function Chip<T extends string | number>({
   label,
@@ -50,9 +50,10 @@ export default function GenerateScreen() {
 
   const onGenerate = async () => {
     const plan = preview;
+    await setCurrentWorkout(plan);
     await addHistory(plan);
     setWorkoutVersion((version) => version + 1);
-    router.push({ pathname: '/workout', params: { plan: JSON.stringify(plan) } });
+    router.push('/workout');
   };
 
   return (

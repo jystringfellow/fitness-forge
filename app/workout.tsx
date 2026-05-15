@@ -1,15 +1,63 @@
 import { useEffect, useRef, useState } from 'react';
+import { Audio } from 'expo-av';
+import * as Speech from 'expo-speech';
 import { useLocalSearchParams } from 'expo-router';
 import { Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { addFavorite } from '@/storage/workoutStorage';
+import { addFavorite, loadCurrentWorkout, setCurrentWorkout } from '@/storage/workoutStorage';
 import { brandIcon, theme } from '@/theme/brand';
-import { WorkoutPlan } from '@/types/workout';
+import { WorkoutIntervalStep, WorkoutPlan } from '@/types/workout';
 
 type TimerState = 'idle' | 'running' | 'paused' | 'completed';
+const transitionChime = require('../assets/timer-switch.wav');
 
 export default function WorkoutScreen() {
   const params = useLocalSearchParams<{ plan?: string }>();
-  const plan = params.plan ? (JSON.parse(params.plan) as WorkoutPlan) : null;
+  const [plan, setPlan] = useState<WorkoutPlan | null>(null);
+  const [isLoadingPlan, setIsLoadingPlan] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadPlan = async () => {
+      try {
+        if (params.plan) {
+          const routePlan = JSON.parse(params.plan) as WorkoutPlan;
+          await setCurrentWorkout(routePlan);
+          if (mounted) {
+            setPlan(routePlan);
+          }
+          return;
+        }
+
+        const storedPlan = await loadCurrentWorkout();
+        if (mounted) {
+          setPlan(storedPlan);
+        }
+      } catch {
+        if (mounted) {
+          setPlan(null);
+        }
+      } finally {
+        if (mounted) {
+          setIsLoadingPlan(false);
+        }
+      }
+    };
+
+    loadPlan();
+
+    return () => {
+      mounted = false;
+    };
+  }, [params.plan]);
+
+  if (isLoadingPlan) {
+    return (
+      <View style={styles.centered}>
+        <Text style={styles.empty}>Loading workout...</Text>
+      </View>
+    );
+  }
 
   if (!plan) {
     return (
@@ -32,6 +80,8 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
   const [timeRemaining, setTimeRemaining] = useState<number>(() => steps[0]?.durationSecs ?? 0);
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const spokenWarningRef = useRef<string | null>(null);
+  const transitionSoundRef = useRef<Audio.Sound | null>(null);
   const currentStep = steps[currentStepIndex] ?? null;
   const nextStep = steps[currentStepIndex + 1] ?? null;
   const progressPercent = steps.length ? Math.min(100, Math.round((currentStepIndex / steps.length) * 100)) : 0;
@@ -41,7 +91,24 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
       ? styles.restTone
       : styles.workTone;
 
+  const playTransitionSound = () => {
+    const transitionSound = transitionSoundRef.current;
+
+    if (!transitionSound) {
+      return;
+    }
+
+    transitionSound
+      .replayAsync()
+      .catch(() => {
+        // The timer should keep moving even if the platform refuses audio playback.
+      });
+  };
+
   const goToStep = (nextIndex: number, autoStart: boolean) => {
+    Speech.stop();
+    spokenWarningRef.current = null;
+
     if (nextIndex >= steps.length) {
       setTimerState('completed');
       setCurrentStepIndex(steps.length);
@@ -51,6 +118,7 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
     }
 
     const nextStep = steps[nextIndex];
+    playTransitionSound();
     setCurrentStepIndex(nextIndex);
     setRepCount(0);
     setTimeRemaining(nextStep.durationSecs);
@@ -58,11 +126,47 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
   };
 
   useEffect(() => {
+    Speech.stop();
+    spokenWarningRef.current = null;
     setTimerState('idle');
     setCurrentStepIndex(0);
     setRepCount(0);
     setTimeRemaining(steps[0]?.durationSecs ?? 0);
+
+    return () => {
+      Speech.stop();
+    };
   }, [plan.createdAt]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    Audio.setAudioModeAsync({
+      playsInSilentModeIOS: true
+    }).catch(() => {
+      // The sound still works on most targets when audio mode setup is unavailable.
+    });
+
+    Audio.Sound.createAsync(transitionChime, { volume: 0.75 })
+      .then(({ sound }) => {
+        if (mounted) {
+          transitionSoundRef.current = sound;
+          return;
+        }
+
+        sound.unloadAsync();
+      })
+      .catch(() => {
+        transitionSoundRef.current = null;
+      });
+
+    return () => {
+      mounted = false;
+      const transitionSound = transitionSoundRef.current;
+      transitionSoundRef.current = null;
+      transitionSound?.unloadAsync();
+    };
+  }, []);
 
   useEffect(() => {
     if (intervalRef.current) {
@@ -89,6 +193,29 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
       }
     };
   }, [timerState, currentStepIndex]);
+
+  useEffect(() => {
+    if (
+      timerState !== 'running' ||
+      !currentStep ||
+      !nextStep ||
+      currentStep.isPrompt ||
+      currentStep.durationSecs <= 10 ||
+      timeRemaining !== 10
+    ) {
+      return;
+    }
+
+    const announcementKey = `${currentStepIndex}-${nextStep.text}`;
+    if (spokenWarningRef.current === announcementKey) {
+      return;
+    }
+
+    spokenWarningRef.current = announcementKey;
+    Speech.speak(spokenTransitionAnnouncement(nextStep), {
+      rate: 0.92
+    });
+  }, [currentStep, currentStepIndex, nextStep, timeRemaining, timerState]);
 
   const handleRepComplete = () => {
     if (!currentStep?.reps) {
@@ -149,6 +276,8 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
   };
 
   const resetTimer = () => {
+    Speech.stop();
+    spokenWarningRef.current = null;
     setTimerState('idle');
     setCurrentStepIndex(0);
     setRepCount(0);
@@ -359,6 +488,51 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
       </ScrollView>
     </View>
   );
+}
+
+function spokenTransitionAnnouncement(nextStep: WorkoutIntervalStep): string {
+  if (nextStep.isPrompt) {
+    return `Ten seconds to go. ${nextStep.text}`;
+  }
+
+  const nextLabel = nextStep.isRest ? 'Next up' : 'Next exercise';
+
+  return `Ten seconds to go. ${nextLabel}: ${spokenStepName(nextStep)} for ${spokenStepDuration(nextStep)}.`;
+}
+
+function spokenStepName(step: WorkoutIntervalStep): string {
+  if (step.exerciseName) {
+    return step.exerciseName;
+  }
+
+  if (step.isRest) {
+    return 'reset';
+  }
+
+  return step.text;
+}
+
+function spokenStepDuration(step: WorkoutIntervalStep): string {
+  if (step.reps) {
+    return `${step.reps} ${step.reps === 1 ? 'rep' : 'reps'}`;
+  }
+
+  if (step.durationSecs <= 0) {
+    return 'as long as you need';
+  }
+
+  const minutes = Math.floor(step.durationSecs / 60);
+  const seconds = step.durationSecs % 60;
+
+  if (minutes === 0) {
+    return `${seconds} ${seconds === 1 ? 'second' : 'seconds'}`;
+  }
+
+  if (seconds === 0) {
+    return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`;
+  }
+
+  return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'} ${seconds} ${seconds === 1 ? 'second' : 'seconds'}`;
 }
 
 const styles = StyleSheet.create({

@@ -3,6 +3,7 @@ import { WorkoutPlan } from '@/types/workout';
 
 const FAVORITES_KEY = 'fitness_forge/favorites';
 const HISTORY_KEY = 'fitness_forge/history';
+const CURRENT_WORKOUT_KEY = 'fitness_forge/current_workout';
 
 export async function loadFavorites(): Promise<WorkoutPlan[]> {
   const raw = await AsyncStorage.getItem(FAVORITES_KEY);
@@ -25,4 +26,13 @@ export async function loadHistory(): Promise<WorkoutPlan[]> {
 export async function addHistory(plan: WorkoutPlan): Promise<void> {
   const current = await loadHistory();
   await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify([plan, ...current].slice(0, 50)));
+}
+
+export async function loadCurrentWorkout(): Promise<WorkoutPlan | null> {
+  const raw = await AsyncStorage.getItem(CURRENT_WORKOUT_KEY);
+  return raw ? (JSON.parse(raw) as WorkoutPlan) : null;
+}
+
+export async function setCurrentWorkout(plan: WorkoutPlan): Promise<void> {
+  await AsyncStorage.setItem(CURRENT_WORKOUT_KEY, JSON.stringify(plan));
 }
