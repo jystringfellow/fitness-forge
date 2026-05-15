@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocalSearchParams } from 'expo-router';
 import { Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { addFavorite } from '@/storage/workoutStorage';
+import { brandIcon, theme } from '@/theme/brand';
 import { WorkoutPlan } from '@/types/workout';
 
 type TimerState = 'idle' | 'running' | 'paused' | 'completed';
@@ -218,6 +219,17 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
     return currentStep?.section === 'main' && currentStep.exerciseName === exerciseName && !currentStep.isRest;
   };
 
+  const mainBlockSummary = () => {
+    return plan.mainBlock.format
+      ? `${plan.mainBlock.rounds} rounds · ${plan.mainBlock.format}`
+      : `${plan.mainBlock.rounds} rounds · ${plan.mainBlock.workSeconds}s work / ${plan.mainBlock.restSeconds}s rest`;
+  };
+
+  const roundTimingLines = plan.mainBlock.roundIntervals?.map(
+    (interval, index) =>
+      `Round ${index + 1}: ${interval.label} · ${interval.workSeconds}s work / ${interval.restSeconds}s rest`
+  ) ?? [];
+
   if (timerState === 'completed') {
     return (
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -234,9 +246,10 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
 
         <View style={styles.block}>
           <Text style={styles.blockTitle}>Main Block</Text>
-          <Text style={styles.line}>
-            {plan.mainBlock.rounds} rounds · {plan.mainBlock.workSeconds}s work / {plan.mainBlock.restSeconds}s rest
-          </Text>
+          <Text style={styles.line}>{mainBlockSummary()}</Text>
+          {roundTimingLines.map((line) => (
+            <Text key={line} style={styles.line}>• {line}</Text>
+          ))}
           {plan.mainBlock.exercises.map((exercise) => (
             <View key={exercise.id} style={styles.exerciseRow}>
               <Text style={styles.exerciseName}>{exercise.name}</Text>
@@ -262,7 +275,7 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Image source={require('../assets/icon.png')} style={styles.headerMark} />
+        <Image source={brandIcon} style={styles.headerMark} />
         <View style={styles.headerCopy}>
           <Text style={styles.headerTitle}>{plan.title}</Text>
           <Text style={styles.headerMeta}>Attachment: {plan.input.attachment}</Text>
@@ -328,9 +341,10 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
 
         <View style={styles.block}>
           <Text style={styles.blockTitle}>Main Block</Text>
-          <Text style={styles.line}>
-            {plan.mainBlock.rounds} rounds · {plan.mainBlock.workSeconds}s work / {plan.mainBlock.restSeconds}s rest
-          </Text>
+          <Text style={styles.line}>{mainBlockSummary()}</Text>
+          {roundTimingLines.map((line) => (
+            <Text key={line} style={styles.line}>• {line}</Text>
+          ))}
           {plan.mainBlock.exercises.map((exercise) => (
             <View key={exercise.id} style={styles.exerciseRow}>
               <Text style={styles.exerciseName}>
@@ -348,102 +362,102 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#140B1F' },
+  container: { flex: 1, backgroundColor: theme.colors.background },
   content: { padding: 18, gap: 14, paddingBottom: 30 },
-  centered: { flex: 1, backgroundColor: '#140B1F', justifyContent: 'center', alignItems: 'center' },
-  empty: { color: '#FBF7FF', fontSize: 18 },
+  centered: { flex: 1, backgroundColor: theme.colors.background, justifyContent: 'center', alignItems: 'center' },
+  empty: { color: theme.colors.text, fontSize: 18 },
 
   header: {
     padding: 18,
-    backgroundColor: '#140B1F',
+    backgroundColor: theme.colors.background,
     borderBottomWidth: 1,
-    borderBottomColor: '#33214A',
+    borderBottomColor: theme.colors.borderMuted,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12
   },
-  headerMark: { width: 42, height: 42 },
+  headerMark: { width: 58, height: 58 },
   headerCopy: { flex: 1 },
-  headerTitle: { color: '#FBF7FF', fontSize: 24, fontWeight: '900' },
-  headerMeta: { color: '#CDBBDE', marginTop: 4, fontWeight: '700', textTransform: 'capitalize' },
-  doneText: { color: '#A6FF3D', fontSize: 24, fontWeight: '900', marginTop: 12 },
+  headerTitle: { color: theme.colors.text, fontSize: 24, fontWeight: '900' },
+  headerMeta: { color: theme.colors.textMuted, marginTop: 4, fontWeight: '700', textTransform: 'capitalize' },
+  doneText: { color: theme.colors.lime, fontSize: 24, fontWeight: '900', marginTop: 12 },
 
   timerSection: {
     flex: 1,
     justifyContent: 'center',
-    backgroundColor: '#211333',
-    borderBottomColor: '#432565',
+    backgroundColor: theme.colors.surfaceRaised,
+    borderBottomColor: theme.colors.border,
     borderBottomWidth: 1,
     padding: 18,
     gap: 14
   },
-  workTone: { borderLeftColor: '#A6FF3D', borderLeftWidth: 5 },
-  restTone: { borderLeftColor: '#FBBF24', borderLeftWidth: 5 },
-  promptTone: { borderLeftColor: '#D872FF', borderLeftWidth: 5 },
+  workTone: { borderLeftColor: theme.colors.lime, borderLeftWidth: 5 },
+  restTone: { borderLeftColor: theme.colors.purple, borderLeftWidth: 5 },
+  promptTone: { borderLeftColor: theme.colors.purpleDeep, borderLeftWidth: 5 },
   timerTopline: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   sectionPill: {
-    color: '#170B22',
-    backgroundColor: '#D872FF',
+    color: theme.colors.ink,
+    backgroundColor: theme.colors.purple,
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 999,
     fontSize: 12,
     fontWeight: '900'
   },
-  stepCount: { color: '#CDBBDE', fontWeight: '900' },
+  stepCount: { color: theme.colors.textMuted, fontWeight: '900' },
   timerDial: {
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#170B22',
-    borderColor: '#432565',
+    backgroundColor: theme.colors.backgroundRaised,
+    borderColor: theme.colors.border,
     borderWidth: 1,
     borderRadius: 8,
     minHeight: 210,
     padding: 18
   },
-  timerLabel: { color: '#E7DAF4', fontSize: 18, marginBottom: 8, textAlign: 'center', fontWeight: '800' },
+  timerLabel: { color: theme.colors.textSoft, fontSize: 18, marginBottom: 8, textAlign: 'center', fontWeight: '800' },
   timerDisplay: {
-    color: '#FBF7FF',
+    color: theme.colors.text,
     fontSize: 76,
     fontWeight: '900',
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     textAlign: 'center'
   },
-  timerSub: { color: '#CDBBDE', marginTop: 8, fontSize: 14, textAlign: 'center', fontWeight: '700' },
-  sessionProgressTrack: { height: 8, backgroundColor: '#432565', borderRadius: 999, overflow: 'hidden' },
-  sessionProgressFill: { height: 8, backgroundColor: '#A6FF3D', borderRadius: 999 },
-  upNext: { color: '#E7DAF4', textAlign: 'center', fontWeight: '700' },
+  timerSub: { color: theme.colors.textMuted, marginTop: 8, fontSize: 14, textAlign: 'center', fontWeight: '700' },
+  sessionProgressTrack: { height: 8, backgroundColor: theme.colors.border, borderRadius: 999, overflow: 'hidden' },
+  sessionProgressFill: { height: 8, backgroundColor: theme.colors.lime, borderRadius: 999 },
+  upNext: { color: theme.colors.textSoft, textAlign: 'center', fontWeight: '700' },
 
-  progressSection: { padding: 12, backgroundColor: '#1B1028', borderBottomColor: '#432565', borderBottomWidth: 1 },
-  progressText: { color: '#FDE68A', textAlign: 'center', fontSize: 15, fontWeight: '800' },
+  progressSection: { padding: 12, backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border, borderBottomWidth: 1 },
+  progressText: { color: theme.colors.lime, textAlign: 'center', fontSize: 15, fontWeight: '800' },
 
-  controls: { flexDirection: 'row', gap: 12, padding: 14, backgroundColor: '#140B1F' },
-  controlButton: { flex: 1, backgroundColor: '#33214A', borderRadius: 8, paddingVertical: 16, alignItems: 'center' },
-  playButton: { flex: 1, backgroundColor: '#A6FF3D', borderRadius: 8, paddingVertical: 16, alignItems: 'center' },
-  pauseButton: { flex: 1, backgroundColor: '#FBBF24', borderRadius: 8, paddingVertical: 16, alignItems: 'center' },
-  controlText: { color: '#FBF7FF', fontSize: 18, fontWeight: '900' },
-  primaryControlText: { color: '#170B22' },
+  controls: { flexDirection: 'row', gap: 12, padding: 14, backgroundColor: theme.colors.background },
+  controlButton: { flex: 1, backgroundColor: theme.colors.borderMuted, borderRadius: 8, paddingVertical: 16, alignItems: 'center' },
+  playButton: { flex: 1, backgroundColor: theme.colors.lime, borderRadius: 8, paddingVertical: 16, alignItems: 'center' },
+  pauseButton: { flex: 1, backgroundColor: theme.colors.purple, borderRadius: 8, paddingVertical: 16, alignItems: 'center' },
+  controlText: { color: theme.colors.text, fontSize: 18, fontWeight: '900' },
+  primaryControlText: { color: theme.colors.ink },
 
-  nextButtonContainer: { flexDirection: 'row', gap: 8, paddingHorizontal: 14, paddingBottom: 14, flexWrap: 'wrap', backgroundColor: '#140B1F' },
-  nextButton: { flex: 1, backgroundColor: '#261638', borderColor: '#432565', borderWidth: 1, borderRadius: 8, paddingVertical: 12, alignItems: 'center' },
-  repButton: { flex: 1, backgroundColor: '#F59E0B', borderRadius: 8, paddingVertical: 12, alignItems: 'center' },
-  nextButtonText: { color: '#E7DAF4', fontSize: 16, fontWeight: '800' },
-  repButtonText: { color: '#170B22', fontSize: 16, fontWeight: '900' },
+  nextButtonContainer: { flexDirection: 'row', gap: 8, paddingHorizontal: 14, paddingBottom: 14, flexWrap: 'wrap', backgroundColor: theme.colors.background },
+  nextButton: { flex: 1, backgroundColor: theme.colors.surfaceMuted, borderColor: theme.colors.border, borderWidth: 1, borderRadius: 8, paddingVertical: 12, alignItems: 'center' },
+  repButton: { flex: 1, backgroundColor: theme.colors.purple, borderRadius: 8, paddingVertical: 12, alignItems: 'center' },
+  nextButtonText: { color: theme.colors.textSoft, fontSize: 16, fontWeight: '800' },
+  repButtonText: { color: theme.colors.ink, fontSize: 16, fontWeight: '900' },
 
   previewSection: { flex: 1 },
-  previewContent: { padding: 16, gap: 12, backgroundColor: '#140B1F' },
+  previewContent: { padding: 16, gap: 12, backgroundColor: theme.colors.background },
 
-  block: { backgroundColor: '#1B1028', borderColor: '#3A2253', borderWidth: 1, borderRadius: 8, padding: 14, gap: 8 },
-  blockTitle: { color: '#D872FF', fontWeight: '900', fontSize: 16 },
-  line: { color: '#E7DAF4' },
-  exerciseRow: { borderTopColor: '#3A2253', borderTopWidth: 1, paddingTop: 10, marginTop: 8 },
-  exerciseName: { color: '#FBF7FF', fontWeight: '900' },
-  cue: { color: '#CDBBDE', fontSize: 13, marginTop: 3, lineHeight: 18 },
-  note: { color: '#A6FF3D', fontStyle: 'italic', fontWeight: '700' },
+  block: { backgroundColor: theme.colors.surface, borderColor: theme.colors.borderMuted, borderWidth: 1, borderRadius: 8, padding: 14, gap: 8 },
+  blockTitle: { color: theme.colors.purple, fontWeight: '900', fontSize: 16 },
+  line: { color: theme.colors.textSoft },
+  exerciseRow: { borderTopColor: theme.colors.borderMuted, borderTopWidth: 1, paddingTop: 10, marginTop: 8 },
+  exerciseName: { color: theme.colors.text, fontWeight: '900' },
+  cue: { color: theme.colors.textMuted, fontSize: 13, marginTop: 3, lineHeight: 18 },
+  note: { color: theme.colors.lime, fontStyle: 'italic', fontWeight: '700' },
 
-  saveButton: { backgroundColor: '#FBBF24', borderRadius: 8, paddingVertical: 14, alignItems: 'center' },
-  saveText: { color: '#170B22', fontWeight: '900' },
+  saveButton: { backgroundColor: theme.colors.purple, borderRadius: 8, paddingVertical: 14, alignItems: 'center' },
+  saveText: { color: theme.colors.ink, fontWeight: '900' },
   buttonContainer: { gap: 12, padding: 16 },
-  resetButton: { backgroundColor: '#EF4444', borderRadius: 8, paddingVertical: 14, alignItems: 'center' },
-  resetText: { color: '#FBF7FF', fontWeight: '900' }
+  resetButton: { backgroundColor: theme.colors.danger, borderRadius: 8, paddingVertical: 14, alignItems: 'center' },
+  resetText: { color: theme.colors.text, fontWeight: '900' }
 });

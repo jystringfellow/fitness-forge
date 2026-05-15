@@ -105,6 +105,12 @@ export interface WorkoutPlan {
     rounds: number;
     workSeconds: number;
     restSeconds: number;
+    format?: string;
+    roundIntervals?: Array<{
+      label: string;
+      workSeconds: number;
+      restSeconds: number;
+    }>;
     exercises: Exercise[];
   };
   note?: string;

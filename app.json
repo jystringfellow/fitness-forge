@@ -7,6 +7,18 @@
     "icon": "./assets/icon.png",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
+    "backgroundColor": "#050406",
+    "splash": {
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#050406"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#050406"
+      }
+    },
     "plugins": ["expo-router"],
     "experiments": {
       "typedRoutes": true

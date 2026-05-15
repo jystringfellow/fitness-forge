@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { generateWorkout } from '@/lib/generateWorkout';
+import { brandIcon, theme } from '@/theme/brand';
 import {
   ATTACHMENT_OPTIONS,
   ENERGY_OPTIONS,
@@ -40,12 +41,17 @@ export default function GenerateScreen() {
   const [energy, setEnergy] = useState<Energy>('normal');
   const [focus, setFocus] = useState<Focus>('full body');
   const [attachment, setAttachment] = useState<Attachment>('recommended');
+  const [workoutVersion, setWorkoutVersion] = useState(0);
 
-  const preview = useMemo(() => generateWorkout({ time, energy, focus, attachment }, true), [time, energy, focus, attachment]);
+  const preview = useMemo(
+    () => generateWorkout({ time, energy, focus, attachment }, true),
+    [time, energy, focus, attachment, workoutVersion]
+  );
 
   const onGenerate = async () => {
     const plan = preview;
     await addHistory(plan);
+    setWorkoutVersion((version) => version + 1);
     router.push({ pathname: '/workout', params: { plan: JSON.stringify(plan) } });
   };
 
@@ -54,7 +60,7 @@ export default function GenerateScreen() {
       <View style={styles.hero}>
         <View style={styles.heroTopline}>
           <View style={styles.brandRow}>
-            <Image source={require('../assets/icon.png')} style={styles.brandMark} />
+            <Image source={brandIcon} style={styles.brandMark} />
             <Text style={styles.kicker}>Daily session</Text>
           </View>
           <Text style={styles.heroBadge}>{preview.intervalSteps.length} steps</Text>
@@ -107,7 +113,9 @@ export default function GenerateScreen() {
         </View>
         <View style={styles.previewRow}>
           <Text style={styles.previewLabel}>Main</Text>
-          <Text style={styles.previewValue}>{preview.mainBlock.rounds} rounds · {preview.mainBlock.workSeconds}s / {preview.mainBlock.restSeconds}s</Text>
+          <Text style={styles.previewValue}>
+            {preview.mainBlock.rounds} rounds · {preview.mainBlock.format ?? `${preview.mainBlock.workSeconds}s / ${preview.mainBlock.restSeconds}s`}
+          </Text>
         </View>
       </View>
     </ScrollView>
@@ -115,16 +123,16 @@ export default function GenerateScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#140B1F' },
+  container: { flex: 1, backgroundColor: theme.colors.background },
   content: { padding: 18, gap: 16, paddingBottom: 40 },
   hero: {
-    backgroundColor: '#211333',
-    borderColor: '#432565',
+    backgroundColor: theme.colors.surfaceRaised,
+    borderColor: theme.colors.border,
     borderWidth: 1,
     borderRadius: 8,
     padding: 18,
     gap: 14,
-    shadowColor: '#000',
+    shadowColor: theme.colors.background,
     shadowOpacity: 0.28,
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 12 },
@@ -132,43 +140,43 @@ const styles = StyleSheet.create({
   },
   heroTopline: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  brandMark: { width: 34, height: 34 },
-  kicker: { color: '#D872FF', fontSize: 12, fontWeight: '800', textTransform: 'uppercase' },
+  brandMark: { width: 52, height: 52 },
+  kicker: { color: theme.colors.purple, fontSize: 12, fontWeight: '800', textTransform: 'uppercase' },
   heroBadge: {
-    color: '#170B22',
-    backgroundColor: '#A6FF3D',
+    color: theme.colors.ink,
+    backgroundColor: theme.colors.lime,
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 999,
     fontSize: 12,
     fontWeight: '900'
   },
-  title: { color: '#FBF7FF', fontSize: 34, fontWeight: '900' },
-  subtitle: { color: '#CDBBDE', fontSize: 16 },
+  title: { color: theme.colors.text, fontSize: 34, fontWeight: '900' },
+  subtitle: { color: theme.colors.textMuted, fontSize: 16 },
   metricsRow: { flexDirection: 'row', gap: 10 },
   metric: {
     flex: 1,
-    backgroundColor: '#170B22',
-    borderColor: '#3A2253',
+    backgroundColor: theme.colors.backgroundRaised,
+    borderColor: theme.colors.borderMuted,
     borderWidth: 1,
     borderRadius: 8,
     padding: 12
   },
-  metricValue: { color: '#FBF7FF', fontSize: 24, fontWeight: '900' },
-  metricLabel: { color: '#9B8CB2', marginTop: 2, fontSize: 12, fontWeight: '700' },
+  metricValue: { color: theme.colors.text, fontSize: 24, fontWeight: '900' },
+  metricLabel: { color: theme.colors.textSubtle, marginTop: 2, fontSize: 12, fontWeight: '700' },
   sectionPanel: {
-    backgroundColor: '#1B1028',
-    borderColor: '#3A2253',
+    backgroundColor: theme.colors.surface,
+    borderColor: theme.colors.borderMuted,
     borderWidth: 1,
     borderRadius: 8,
     padding: 14,
     gap: 10
   },
-  section: { color: '#FBF7FF', marginTop: 4, fontSize: 14, fontWeight: '800' },
+  section: { color: theme.colors.text, marginTop: 4, fontSize: 14, fontWeight: '800' },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {
-    backgroundColor: '#261638',
-    borderColor: '#432565',
+    backgroundColor: theme.colors.surfaceMuted,
+    borderColor: theme.colors.border,
     borderWidth: 1,
     paddingHorizontal: 14,
     paddingVertical: 10,
@@ -176,31 +184,31 @@ const styles = StyleSheet.create({
     minHeight: 40,
     justifyContent: 'center'
   },
-  chipActive: { backgroundColor: '#A6FF3D', borderColor: '#A6FF3D' },
-  chipText: { color: '#E7DAF4', textTransform: 'capitalize', fontWeight: '700' },
-  chipTextActive: { color: '#170B22', fontWeight: '900' },
+  chipActive: { backgroundColor: theme.colors.lime, borderColor: theme.colors.lime },
+  chipText: { color: theme.colors.textSoft, textTransform: 'capitalize', fontWeight: '700' },
+  chipTextActive: { color: theme.colors.ink, fontWeight: '900' },
   generateButton: {
-    backgroundColor: '#A6FF3D',
+    backgroundColor: theme.colors.lime,
     borderRadius: 8,
     paddingVertical: 16,
     alignItems: 'center',
-    shadowColor: '#A6FF3D',
+    shadowColor: theme.colors.lime,
     shadowOpacity: 0.24,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 10 },
     elevation: 5
   },
-  generateText: { color: '#170B22', fontWeight: '900', fontSize: 17 },
+  generateText: { color: theme.colors.ink, fontWeight: '900', fontSize: 17 },
   preview: {
-    backgroundColor: '#1B1028',
-    borderColor: '#3A2253',
+    backgroundColor: theme.colors.surface,
+    borderColor: theme.colors.borderMuted,
     borderWidth: 1,
     borderRadius: 8,
     padding: 14,
     gap: 10
   },
-  previewTitle: { color: '#FBF7FF', fontWeight: '900', fontSize: 16 },
+  previewTitle: { color: theme.colors.text, fontWeight: '900', fontSize: 16 },
   previewRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 14 },
-  previewLabel: { color: '#9B8CB2', fontWeight: '700' },
-  previewValue: { color: '#E7DAF4', flex: 1, textAlign: 'right', fontWeight: '700' }
+  previewLabel: { color: theme.colors.textSubtle, fontWeight: '700' },
+  previewValue: { color: theme.colors.textSoft, flex: 1, textAlign: 'right', fontWeight: '700' }
 });

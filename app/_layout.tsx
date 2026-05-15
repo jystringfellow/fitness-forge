@@ -1,24 +1,25 @@
 import { Tabs } from 'expo-router';
+import { theme } from '@/theme/brand';
 
 export default function RootLayout() {
   return (
     <Tabs
       screenOptions={{
         headerTitleAlign: 'center',
-        headerStyle: { backgroundColor: '#140B1F' },
-        headerTintColor: '#FBF7FF',
+        headerStyle: { backgroundColor: theme.colors.background },
+        headerTintColor: theme.colors.text,
         headerShadowVisible: false,
-        tabBarActiveTintColor: '#A6FF3D',
-        tabBarInactiveTintColor: '#9B8CB2',
+        tabBarActiveTintColor: theme.colors.lime,
+        tabBarInactiveTintColor: theme.colors.textSubtle,
         tabBarStyle: {
-          backgroundColor: '#140B1F',
-          borderTopColor: '#33214A',
+          backgroundColor: theme.colors.background,
+          borderTopColor: theme.colors.borderMuted,
           height: 62,
           paddingBottom: 8,
           paddingTop: 6
         },
         tabBarLabelStyle: { fontWeight: '700' },
-        sceneStyle: { backgroundColor: '#140B1F' }
+        sceneStyle: { backgroundColor: theme.colors.background }
       }}
     >
       <Tabs.Screen name="index" options={{ title: 'Generate' }} />

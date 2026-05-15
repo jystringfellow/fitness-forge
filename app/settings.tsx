@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from 'react-native';
+import { theme } from '@/theme/brand';
 
 export default function SettingsScreen() {
   return (
@@ -17,18 +18,18 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#140B1F', padding: 18, gap: 10 },
-  kicker: { color: '#D872FF', fontSize: 12, fontWeight: '900', textTransform: 'uppercase' },
-  title: { color: '#FBF7FF', fontSize: 30, fontWeight: '900' },
+  container: { flex: 1, backgroundColor: theme.colors.background, padding: 18, gap: 10 },
+  kicker: { color: theme.colors.purple, fontSize: 12, fontWeight: '900', textTransform: 'uppercase' },
+  title: { color: theme.colors.text, fontSize: 30, fontWeight: '900' },
   panel: {
-    backgroundColor: '#1B1028',
-    borderColor: '#3A2253',
+    backgroundColor: theme.colors.surface,
+    borderColor: theme.colors.borderMuted,
     borderWidth: 1,
     borderRadius: 8,
     padding: 16,
     gap: 12,
     marginTop: 6
   },
-  panelTitle: { color: '#A6FF3D', fontWeight: '900', fontSize: 16 },
-  text: { color: '#E7DAF4', fontWeight: '700' }
+  panelTitle: { color: theme.colors.lime, fontWeight: '900', fontSize: 16 },
+  text: { color: theme.colors.textSoft, fontWeight: '700' }
 });
