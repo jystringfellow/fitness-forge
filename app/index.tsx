@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { generateWorkout } from '@/lib/generateWorkout';
@@ -11,9 +11,10 @@ import {
   Attachment,
   Energy,
   Focus,
-  TimeOption
+  TimeOption,
+  WorkoutPlan
 } from '@/types/workout';
-import { addHistory, setCurrentWorkout } from '@/storage/workoutStorage';
+import { setCurrentWorkout } from '@/storage/workoutStorage';
 
 function Chip<T extends string | number>({
   label,
@@ -41,18 +42,20 @@ export default function GenerateScreen() {
   const [energy, setEnergy] = useState<Energy>('normal');
   const [focus, setFocus] = useState<Focus>('full body');
   const [attachment, setAttachment] = useState<Attachment>('recommended');
-  const [workoutVersion, setWorkoutVersion] = useState(0);
+  const [generatedPlan, setGeneratedPlan] = useState<WorkoutPlan | null>(null);
 
-  const preview = useMemo(
-    () => generateWorkout({ time, energy, focus, attachment }, true),
-    [time, energy, focus, attachment, workoutVersion]
-  );
+  const clearGeneratedPlan = () => setGeneratedPlan(null);
 
-  const onGenerate = async () => {
-    const plan = preview;
-    await setCurrentWorkout(plan);
-    await addHistory(plan);
-    setWorkoutVersion((version) => version + 1);
+  const onGenerate = () => {
+    setGeneratedPlan(generateWorkout({ time, energy, focus, attachment }, true));
+  };
+
+  const onStartWorkout = async () => {
+    if (!generatedPlan) {
+      return;
+    }
+
+    await setCurrentWorkout(generatedPlan);
     router.push('/workout');
   };
 
@@ -64,61 +67,126 @@ export default function GenerateScreen() {
             <Image source={brandIcon} style={styles.brandMark} />
             <Text style={styles.kicker}>Daily session</Text>
           </View>
-          <Text style={styles.heroBadge}>{preview.intervalSteps.length} steps</Text>
+          <Text style={styles.heroBadge}>Fresh build</Text>
         </View>
         <Text style={styles.title}>Fitness Forge</Text>
-        <Text style={styles.subtitle}>{preview.title}</Text>
-        <View style={styles.metricsRow}>
-          <View style={styles.metric}>
-            <Text style={styles.metricValue}>{time}</Text>
-            <Text style={styles.metricLabel}>minutes</Text>
-          </View>
-          <View style={styles.metric}>
-            <Text style={styles.metricValue}>{preview.mainBlock.rounds}</Text>
-            <Text style={styles.metricLabel}>rounds</Text>
-          </View>
-          <View style={styles.metric}>
-            <Text style={styles.metricValue}>{preview.mainBlock.exercises.length}</Text>
-            <Text style={styles.metricLabel}>moves</Text>
-          </View>
-        </View>
+        <Text style={styles.subtitle}>
+          Pick the shape of today's work, generate a session, then decide if it earns a start.
+        </Text>
       </View>
 
-      <View style={styles.sectionPanel}>
-        <Text style={styles.section}>Time available</Text>
-        <View style={styles.row}>{TIME_OPTIONS.map((option) => <Chip key={option} label={`${option} min`} active={time === option} onPress={() => setTime(option)} />)}</View>
+      {!generatedPlan ? (
+        <>
+          <View style={styles.sectionPanel}>
+            <Text style={styles.section}>Time available</Text>
+            <View style={styles.row}>
+              {TIME_OPTIONS.map((option) => (
+                <Chip
+                  key={option}
+                  label={`${option} min`}
+                  active={time === option}
+                  onPress={() => {
+                    setTime(option);
+                    clearGeneratedPlan();
+                  }}
+                />
+              ))}
+            </View>
 
-        <Text style={styles.section}>Energy</Text>
-        <View style={styles.row}>{ENERGY_OPTIONS.map((option) => <Chip key={option} label={formatLabel(option)} active={energy === option} onPress={() => setEnergy(option)} />)}</View>
+            <Text style={styles.section}>Energy</Text>
+            <View style={styles.row}>
+              {ENERGY_OPTIONS.map((option) => (
+                <Chip
+                  key={option}
+                  label={formatLabel(option)}
+                  active={energy === option}
+                  onPress={() => {
+                    setEnergy(option);
+                    clearGeneratedPlan();
+                  }}
+                />
+              ))}
+            </View>
 
-        <Text style={styles.section}>Focus</Text>
-        <View style={styles.row}>{FOCUS_OPTIONS.map((option) => <Chip key={option} label={formatLabel(option)} active={focus === option} onPress={() => setFocus(option)} />)}</View>
+            <Text style={styles.section}>Focus</Text>
+            <View style={styles.row}>
+              {FOCUS_OPTIONS.map((option) => (
+                <Chip
+                  key={option}
+                  label={formatLabel(option)}
+                  active={focus === option}
+                  onPress={() => {
+                    setFocus(option);
+                    clearGeneratedPlan();
+                  }}
+                />
+              ))}
+            </View>
 
-        <Text style={styles.section}>Attachment</Text>
-        <View style={styles.row}>{ATTACHMENT_OPTIONS.map((option) => <Chip key={option} label={formatLabel(option)} active={attachment === option} onPress={() => setAttachment(option)} />)}</View>
-      </View>
+            <Text style={styles.section}>Attachment</Text>
+            <View style={styles.row}>
+              {ATTACHMENT_OPTIONS.map((option) => (
+                <Chip
+                  key={option}
+                  label={formatLabel(option)}
+                  active={attachment === option}
+                  onPress={() => {
+                    setAttachment(option);
+                    clearGeneratedPlan();
+                  }}
+                />
+              ))}
+            </View>
+          </View>
 
-      <TouchableOpacity style={styles.generateButton} onPress={onGenerate}>
-        <Text style={styles.generateText}>Start Workout</Text>
-      </TouchableOpacity>
+          <TouchableOpacity style={styles.generateButton} onPress={onGenerate}>
+            <Text style={styles.generateText}>Generate Workout</Text>
+          </TouchableOpacity>
+        </>
+      ) : (
+        <View style={styles.reviewPanel}>
+          <View style={styles.reviewTopline}>
+            <Text style={styles.section}>Generated workout</Text>
+            <Text style={styles.reviewBadge}>{generatedPlan.mainBlock.rounds} rounds</Text>
+          </View>
+          <Text style={styles.reviewTitle}>{generatedPlan.title}</Text>
+          <View style={styles.choiceSummary}>
+            <Text style={styles.choicePill}>{generatedPlan.input.time} min</Text>
+            <Text style={styles.choicePill}>{formatLabel(generatedPlan.input.energy)}</Text>
+            <Text style={styles.choicePill}>{formatLabel(generatedPlan.input.focus)}</Text>
+            <Text style={styles.choicePill}>{formatLabel(generatedPlan.input.attachment)}</Text>
+          </View>
 
-      <View style={styles.preview}>
-        <Text style={styles.previewTitle}>Workout Preview</Text>
-        <View style={styles.previewRow}>
-          <Text style={styles.previewLabel}>Attachment</Text>
-          <Text style={styles.previewValue}>{formatLabel(preview.input.attachment)}</Text>
+          <View style={styles.previewRow}>
+            <Text style={styles.previewLabel}>Cardio</Text>
+            <Text style={styles.previewValue}>{generatedPlan.cardioBlock.slice(1).map((item) => item.text).join(' + ')}</Text>
+          </View>
+          <View style={styles.previewRow}>
+            <Text style={styles.previewLabel}>Main</Text>
+            <Text style={styles.previewValue}>
+              {generatedPlan.mainBlock.format ?? `${generatedPlan.mainBlock.workSeconds}s / ${generatedPlan.mainBlock.restSeconds}s`}
+            </Text>
+          </View>
+          <View style={styles.moveList}>
+            {generatedPlan.mainBlock.exercises.map((exercise) => (
+              <Text key={exercise.id} style={styles.moveItem}>{exercise.name}</Text>
+            ))}
+          </View>
+          {generatedPlan.note ? <Text style={styles.note}>{generatedPlan.note}</Text> : null}
+
+          <View style={styles.reviewActions}>
+            <TouchableOpacity style={styles.secondaryButton} onPress={() => setGeneratedPlan(null)}>
+              <Text style={styles.secondaryText}>Adjust Inputs</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.secondaryButton} onPress={onGenerate}>
+              <Text style={styles.secondaryText}>Regenerate</Text>
+            </TouchableOpacity>
+          </View>
+          <TouchableOpacity style={styles.generateButton} onPress={onStartWorkout}>
+            <Text style={styles.generateText}>Start This Workout</Text>
+          </TouchableOpacity>
         </View>
-        <View style={styles.previewRow}>
-          <Text style={styles.previewLabel}>Cardio</Text>
-          <Text style={styles.previewValue}>{preview.cardioBlock[0].text}</Text>
-        </View>
-        <View style={styles.previewRow}>
-          <Text style={styles.previewLabel}>Main</Text>
-          <Text style={styles.previewValue}>
-            {preview.mainBlock.rounds} rounds · {preview.mainBlock.format ?? `${preview.mainBlock.workSeconds}s / ${preview.mainBlock.restSeconds}s`}
-          </Text>
-        </View>
-      </View>
+      )}
     </ScrollView>
   );
 }
@@ -154,17 +222,6 @@ const styles = StyleSheet.create({
   },
   title: { color: theme.colors.text, fontSize: 34, fontWeight: '900' },
   subtitle: { color: theme.colors.textMuted, fontSize: 16 },
-  metricsRow: { flexDirection: 'row', gap: 10 },
-  metric: {
-    flex: 1,
-    backgroundColor: theme.colors.backgroundRaised,
-    borderColor: theme.colors.borderMuted,
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 12
-  },
-  metricValue: { color: theme.colors.text, fontSize: 24, fontWeight: '900' },
-  metricLabel: { color: theme.colors.textSubtle, marginTop: 2, fontSize: 12, fontWeight: '700' },
   sectionPanel: {
     backgroundColor: theme.colors.surface,
     borderColor: theme.colors.borderMuted,
@@ -200,7 +257,7 @@ const styles = StyleSheet.create({
     elevation: 5
   },
   generateText: { color: theme.colors.ink, fontWeight: '900', fontSize: 17 },
-  preview: {
+  reviewPanel: {
     backgroundColor: theme.colors.surface,
     borderColor: theme.colors.borderMuted,
     borderWidth: 1,
@@ -208,8 +265,47 @@ const styles = StyleSheet.create({
     padding: 14,
     gap: 10
   },
-  previewTitle: { color: theme.colors.text, fontWeight: '900', fontSize: 16 },
+  reviewTopline: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
+  reviewBadge: {
+    color: theme.colors.ink,
+    backgroundColor: theme.colors.lime,
+    borderRadius: 999,
+    overflow: 'hidden',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    fontSize: 12,
+    fontWeight: '900'
+  },
+  reviewTitle: { color: theme.colors.text, fontWeight: '900', fontSize: 24, textTransform: 'capitalize' },
+  choiceSummary: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  choicePill: {
+    color: theme.colors.textSoft,
+    backgroundColor: theme.colors.surfaceMuted,
+    borderColor: theme.colors.border,
+    borderWidth: 1,
+    borderRadius: 999,
+    overflow: 'hidden',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    fontSize: 12,
+    fontWeight: '800',
+    textTransform: 'capitalize'
+  },
   previewRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 14 },
   previewLabel: { color: theme.colors.textSubtle, fontWeight: '700' },
-  previewValue: { color: theme.colors.textSoft, flex: 1, textAlign: 'right', fontWeight: '700' }
+  previewValue: { color: theme.colors.textSoft, flex: 1, textAlign: 'right', fontWeight: '700' },
+  moveList: { gap: 8, borderTopColor: theme.colors.borderMuted, borderTopWidth: 1, paddingTop: 10 },
+  moveItem: { color: theme.colors.text, fontWeight: '800' },
+  note: { color: theme.colors.lime, fontStyle: 'italic', fontWeight: '700' },
+  reviewActions: { flexDirection: 'row', gap: 10, marginTop: 4 },
+  secondaryButton: {
+    flex: 1,
+    backgroundColor: theme.colors.surfaceMuted,
+    borderColor: theme.colors.border,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 13,
+    alignItems: 'center'
+  },
+  secondaryText: { color: theme.colors.textSoft, fontWeight: '900' }
 });

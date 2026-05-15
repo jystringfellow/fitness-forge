@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { addFavorite, loadCurrentWorkout, setCurrentWorkout } from '@/storage/workoutStorage';
+import { loadCurrentWorkout, setCurrentWorkout } from '@/storage/workoutStorage';
 import { brandIcon, theme } from '@/theme/brand';
 import { WorkoutIntervalStep, WorkoutPlan } from '@/types/workout';
 
@@ -73,6 +73,7 @@ export default function WorkoutScreen() {
 }
 
 function TimerView({ plan }: { plan: WorkoutPlan }) {
+  const router = useRouter();
   const steps = plan.intervalSteps?.length ? plan.intervalSteps : [];
   const [timerState, setTimerState] = useState<TimerState>('idle');
   const [currentStepIndex, setCurrentStepIndex] = useState<number>(0);
@@ -244,7 +245,7 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
 
     const section = currentStep.section ? currentStep.section[0].toUpperCase() + currentStep.section.slice(1) : 'Workout';
     const round = currentStep.round && currentStep.totalRounds ? ` · ${currentStep.round}/${currentStep.totalRounds}` : '';
-    return `${section}${round} · Step ${Math.min(currentStepIndex + 1, steps.length)}/${steps.length}`;
+    return `${section}${round}`;
   };
 
   const sectionLabel = () => {
@@ -390,8 +391,8 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
         {plan.note ? <Text style={styles.note}>{plan.note}</Text> : null}
 
         <View style={styles.buttonContainer}>
-          <TouchableOpacity style={styles.saveButton} onPress={() => addFavorite(plan)}>
-            <Text style={styles.saveText}>Save to Favorites</Text>
+          <TouchableOpacity style={styles.generateButton} onPress={() => router.push('/')}>
+            <Text style={styles.generateText}>Generate Another</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.resetButton} onPress={resetTimer}>
             <Text style={styles.resetText}>Restart Workout</Text>
@@ -414,7 +415,6 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
       <View style={[styles.timerSection, timerToneStyle]}>
         <View style={styles.timerTopline}>
           <Text style={styles.sectionPill}>{sectionLabel()}</Text>
-          <Text style={styles.stepCount}>{Math.min(currentStepIndex + 1, steps.length)}/{steps.length}</Text>
         </View>
         <View style={styles.timerDial}>
           <Text style={styles.timerLabel}>{currentExerciseName()}</Text>
@@ -578,7 +578,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '900'
   },
-  stepCount: { color: theme.colors.textMuted, fontWeight: '900' },
   timerDial: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -629,8 +628,8 @@ const styles = StyleSheet.create({
   cue: { color: theme.colors.textMuted, fontSize: 13, marginTop: 3, lineHeight: 18 },
   note: { color: theme.colors.lime, fontStyle: 'italic', fontWeight: '700' },
 
-  saveButton: { backgroundColor: theme.colors.purple, borderRadius: 8, paddingVertical: 14, alignItems: 'center' },
-  saveText: { color: theme.colors.ink, fontWeight: '900' },
+  generateButton: { backgroundColor: theme.colors.lime, borderRadius: 8, paddingVertical: 14, alignItems: 'center' },
+  generateText: { color: theme.colors.ink, fontWeight: '900' },
   buttonContainer: { gap: 12, padding: 16 },
   resetButton: { backgroundColor: theme.colors.danger, borderRadius: 8, paddingVertical: 14, alignItems: 'center' },
   resetText: { color: theme.colors.text, fontWeight: '900' }
