@@ -9,6 +9,17 @@ import { WorkoutIntervalStep, WorkoutPlan } from '@/types/workout';
 
 type TimerState = 'idle' | 'running' | 'paused' | 'completed';
 const transitionChime = require('../assets/timer-switch.wav');
+const NEXT_UP_PROMPTS = [
+  'Next up',
+  'Get ready for',
+  'Coming in hot',
+  'On deck',
+  'Coming up',
+  'Brace for',
+  'Set up for',
+  'Move into',
+  'Lock in for'
+];
 
 export default function WorkoutScreen() {
   const params = useLocalSearchParams<{ plan?: string }>();
@@ -201,8 +212,8 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
       !currentStep ||
       !nextStep ||
       currentStep.isPrompt ||
-      currentStep.durationSecs <= 10 ||
-      timeRemaining !== 10
+      currentStep.durationSecs <= 7 ||
+      timeRemaining !== 7
     ) {
       return;
     }
@@ -492,12 +503,16 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
 
 function spokenTransitionAnnouncement(nextStep: WorkoutIntervalStep): string {
   if (nextStep.isPrompt) {
-    return `Ten seconds to go. ${nextStep.text}`;
+    return nextStep.text;
   }
 
-  const nextLabel = nextStep.isRest ? 'Next up' : 'Next exercise';
+  const nextLabel = nextStep.isRest ? 'Next up' : pickNextUpPrompt();
 
-  return `Ten seconds to go. ${nextLabel}: ${spokenStepName(nextStep)} for ${spokenStepDuration(nextStep)}.`;
+  return `${nextLabel}: ${spokenStepName(nextStep)} for ${spokenStepDuration(nextStep)}.`;
+}
+
+function pickNextUpPrompt(): string {
+  return NEXT_UP_PROMPTS[Math.floor(Math.random() * NEXT_UP_PROMPTS.length)];
 }
 
 function spokenStepName(step: WorkoutIntervalStep): string {
