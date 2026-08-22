@@ -17,6 +17,8 @@ FORGE answers “Give me a good workout today.” It preserves the existing rand
 
 Both sources write to one workout history while retaining source-specific context. BUILD records variation, assistance/load, program position, and planned-versus-actual performance. FORGE records its generated session summary.
 
+BUILD prescriptions also include exercise-specific recovery guidance. Completing a non-final set starts a dismissible countdown: two minutes for pull-ups and heavier Romanian deadlifts, 90 seconds for push-ups and moderate strength work, and 45–60 seconds for lighter accessories, core work, and swings.
+
 ## Architecture
 
 - `src/types/build.ts` — BUILD profiles, prescriptions, results, assessments, milestones, and unified history types

@@ -246,3 +246,25 @@ test('a long break does not trigger automatic regression or punishment', () => {
   assert.deepEqual(workout.exercises.find((item) => item.kind === 'pull-up')?.sets.map((set) => set.targetReps), profile.pullup.targetReps);
   assert.equal(workout.templateId, 'strength-a');
 });
+
+test('BUILD prescriptions include exercise-specific rest intervals', () => {
+  const profile = createInitialBuildProfile({
+    pullupEnabled: true, pullupAssistanceLb: 40, pullupCurrentReps: 10, assistanceIncrementLb: 5,
+    pushupEnabled: true, pushupVariation: 'knee', pushupCurrentMax: 20
+  }, NOW);
+  const strengthA = createBuildWorkout(profile, NOW);
+  assert.deepEqual(
+    Object.fromEntries(strengthA.exercises.map((item) => [item.exerciseId, item.restSecondsBetweenSets])),
+    { 'assisted-pull-up': 120, 'knee-push-up': 90, 'dumbbell-single-leg-rdl': 90, 'kettlebell-swing': 60 }
+  );
+
+  const strengthB = createBuildWorkout({ ...profile, nextTemplateIndex: 1 }, NOW);
+  assert.equal(strengthB.exercises.find((item) => item.exerciseId === 'dumbbell-rdl')?.restSecondsBetweenSets, 120);
+  assert.equal(strengthB.exercises.find((item) => item.exerciseId === 'dumbbell-squat-press')?.restSecondsBetweenSets, 90);
+
+  const assessment = createBuildWorkout({
+    ...profile,
+    pushup: { ...profile.pushup, assessmentDue: true, assessmentVariation: 'knee' }
+  }, NOW);
+  assert.equal(assessment.exercises.find((item) => item.kind === 'assessment')?.restSecondsBetweenSets, 0);
+});

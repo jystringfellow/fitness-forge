@@ -14,6 +14,13 @@ function setSummary(exercise: BuildWorkoutPrescription['exercises'][number]): st
   return `${reps}${first?.perSide ? ' / side' : ''}`;
 }
 
+function restSummary(seconds: number): string {
+  if (!seconds) return 'Assessment set · no prescribed interval';
+  const minutes = Math.floor(seconds / 60);
+  const remaining = seconds % 60;
+  return `Rest ${minutes}:${remaining.toString().padStart(2, '0')} between sets`;
+}
+
 export default function TodayScreen() {
   const router = useRouter();
   const [profile, setProfile] = useState<BuildProfile | null>(null);
@@ -98,6 +105,7 @@ export default function TodayScreen() {
             {exercise.optional ? <Text style={styles.optional}>OPTIONAL</Text> : null}
           </View>
           <Text style={styles.prescription}>{setSummary(exercise)}</Text>
+          <Text style={styles.rest}>{restSummary(exercise.restSecondsBetweenSets)}</Text>
           {exercise.progressionLabel ? <Text style={styles.progression}>{exercise.progressionLabel}</Text> : null}
           {lastResult ? (() => {
             const last = lastResult.exercises.find((item) => item.kind === exercise.kind && item.variation === exercise.variation);
@@ -144,6 +152,7 @@ const styles = StyleSheet.create({
   optional: { color: theme.colors.textSubtle, fontSize: 10, fontWeight: '900' },
   prescription: { color: theme.colors.lime, fontSize: 21, fontWeight: '900' },
   progression: { color: theme.colors.textSoft, fontWeight: '700' },
+  rest: { color: theme.colors.purple, fontSize: 13, fontWeight: '800' },
   last: { color: theme.colors.textSubtle, fontSize: 13 },
   forgeLink: { alignItems: 'center', paddingVertical: 10 },
   forgeLinkText: { color: theme.colors.purple, fontWeight: '800' }

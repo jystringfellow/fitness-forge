@@ -76,6 +76,7 @@ export interface ExercisePrescription {
   optional?: boolean;
   progressionLabel?: string;
   equipment: EquipmentId[];
+  restSecondsBetweenSets: number;
 }
 
 export interface BuildWorkoutPrescription {
@@ -106,6 +107,7 @@ export interface CompletedExercise {
   completedSets: CompletedSet[];
   skipped: boolean;
   notes?: string;
+  restSecondsBetweenSets?: number;
 }
 
 export interface BuildWorkoutResult {
