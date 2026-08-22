@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getInitialPushupProgramWeek, selectPushupBracket } from '@/data/pushupProgram';
 import { BuildProfile, BuildWorkoutPrescription, WorkoutHistoryEntry } from '@/types/build';
 import { WorkoutPlan } from '@/types/workout';
 
@@ -19,8 +20,48 @@ async function readJson<T>(key: string): Promise<T | null> {
   }
 }
 
-export function loadBuildProfile(): Promise<BuildProfile | null> {
-  return readJson<BuildProfile>(KEYS.profile);
+export function migrateBuildProfile(value: unknown): BuildProfile | null {
+  if (!value || typeof value !== 'object') return null;
+  const profile = value as Record<string, unknown>;
+  const pushup = profile.pushup as Record<string, unknown> | undefined;
+  if (!pushup) return null;
+  if (profile.schemaVersion === 2 && typeof pushup.programWeek === 'number') return value as BuildProfile;
+
+  const sessionIndex = typeof pushup.programSessionIndex === 'number' ? pushup.programSessionIndex : 0;
+  const assessmentDue = pushup.assessmentDue === true;
+  const baselineMax = typeof pushup.baselineMax === 'number' ? pushup.baselineMax : 1;
+  const programWeek = assessmentDue
+    ? 2
+    : sessionIndex === 0
+      ? getInitialPushupProgramWeek(baselineMax)
+      : Math.min(2, Math.floor(sessionIndex / 3) + 1);
+  const programDay = assessmentDue ? 3 : (sessionIndex % 3) + 1;
+
+  return {
+    ...(value as Omit<BuildProfile, 'schemaVersion' | 'pushup'>),
+    schemaVersion: 2,
+    pushup: {
+      ...pushup,
+      baselineMax,
+      programWeek,
+      programDay,
+      programBracket: selectPushupBracket(programWeek, baselineMax).id,
+      assessmentReason: assessmentDue ? 'phase' : undefined,
+      nextProgramWeekAfterAssessment: assessmentDue ? 3 : undefined
+    }
+  } as BuildProfile;
+}
+
+export async function loadBuildProfile(): Promise<BuildProfile | null> {
+  const stored = await readJson<unknown>(KEYS.profile);
+  const migrated = migrateBuildProfile(stored);
+  if (migrated && (stored as { schemaVersion?: number } | null)?.schemaVersion !== 2) {
+    await Promise.all([
+      saveBuildProfile(migrated),
+      AsyncStorage.removeItem(KEYS.activeBuildWorkout)
+    ]);
+  }
+  return migrated;
 }
 
 export async function saveBuildProfile(profile: BuildProfile): Promise<void> {

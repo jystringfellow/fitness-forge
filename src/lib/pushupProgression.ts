@@ -1,4 +1,12 @@
 import {
+  getInitialPushupProgramWeek,
+  getPushupProgramPrescription,
+  getPushupWeek,
+  previousPushupProgramPosition,
+  PUSHUP_REASSESSMENT_WEEKS,
+  selectPushupBracket
+} from '@/data/pushupProgram';
+import {
   CompletedExercise,
   ProgressionUpdate,
   PushupProgressionState,
@@ -11,23 +19,20 @@ const GRADUATION_MAX: Record<Exclude<PushupVariation, 'standard'>, number> = {
   incline: 30,
   knee: 40
 };
-const SET_RATIOS = [0.34, 0.4, 0.25, 0.25, 0.32];
 
 export function getPushupTargets(state: PushupProgressionState): number[] {
-  const growth = 1 + Math.min(0.5, state.programSessionIndex * 0.035);
-  return SET_RATIOS.map((ratio) => Math.max(3, Math.round(state.baselineMax * ratio * growth)));
-}
-
-export function selectPushupStartingLevel(maxReps: number): number {
-  if (maxReps < 6) return 0;
-  if (maxReps < 12) return 1;
-  if (maxReps < 20) return 2;
-  if (maxReps < 30) return 3;
-  return 4;
+  return getPushupProgramPrescription(state).sets.map((set) => set.reps);
 }
 
 function nextVariation(variation: PushupVariation): PushupVariation | null {
   return VARIATIONS[VARIATIONS.indexOf(variation) + 1] ?? null;
+}
+
+function assessedProgramWeek(state: PushupProgressionState, reps: number, isGraduationAssessment: boolean): number {
+  if (isGraduationAssessment) return getInitialPushupProgramWeek(reps);
+  const requestedWeek = state.nextProgramWeekAfterAssessment ?? state.programWeek;
+  const minimumForWeek = getPushupWeek(requestedWeek).brackets[0].minReps;
+  return requestedWeek > 1 && reps < minimumForWeek ? requestedWeek - 1 : requestedWeek;
 }
 
 export function applyPushupAssessment(
@@ -42,7 +47,15 @@ export function applyPushupAssessment(
 
   const reps = Math.max(0, set.actualReps);
   const variation = (exercise.variation ?? state.assessmentVariation) as PushupVariation;
-  const assessment = { id: `assessment-${Date.parse(completedAt) || Date.now()}`, variation, reps, completedAt };
+  const isGraduationAssessment = Boolean(state.graduationFrom) && variation !== state.currentVariation;
+  const assessment = {
+    id: `assessment-${Date.parse(completedAt) || Date.now()}`,
+    variation,
+    reps,
+    completedAt,
+    reason: state.assessmentReason ?? (isGraduationAssessment ? 'graduation' as const : 'phase' as const),
+    programWeek: state.programWeek
+  };
   const bestStandardReps = variation === 'standard' ? Math.max(state.bestStandardReps, reps) : state.bestStandardReps;
 
   if (variation === 'standard' && reps >= 50) {
@@ -52,6 +65,9 @@ export function applyPushupAssessment(
         currentVariation: 'standard',
         baselineMax: reps,
         assessmentDue: false,
+        assessmentReason: undefined,
+        nextProgramWeekAfterAssessment: undefined,
+        graduationFrom: undefined,
         assessments: [...state.assessments, assessment],
         bestStandardReps,
         sessionsCompleted: state.sessionsCompleted + 1,
@@ -62,15 +78,19 @@ export function applyPushupAssessment(
     };
   }
 
-  const isGraduationAssessment = Boolean(state.graduationFrom) && variation !== state.currentVariation;
+  const programWeek = assessedProgramWeek(state, reps, isGraduationAssessment);
+  const bracket = selectPushupBracket(programWeek, reps);
   const assessedState: PushupProgressionState = {
     ...state,
     currentVariation: isGraduationAssessment ? variation : state.currentVariation,
     baselineMax: reps,
-    programSessionIndex: selectPushupStartingLevel(reps),
-    successfulWorkoutsSinceAssessment: 0,
+    programWeek,
+    programDay: 1,
+    programBracket: bracket.id,
     assessmentDue: false,
     assessmentVariation: variation,
+    assessmentReason: undefined,
+    nextProgramWeekAfterAssessment: undefined,
     graduationFrom: undefined,
     assessments: [...state.assessments, assessment],
     bestStandardReps,
@@ -81,16 +101,27 @@ export function applyPushupAssessment(
   const harder = nextVariation(variation);
   if (harder && reps >= threshold) {
     return {
-      state: { ...assessedState, assessmentDue: true, assessmentVariation: harder, graduationFrom: variation },
+      state: {
+        ...assessedState,
+        assessmentDue: true,
+        assessmentVariation: harder,
+        assessmentReason: 'graduation',
+        graduationFrom: variation
+      },
       outcome: 'graduated',
-      summary: `${variation} level complete. Next session assesses ${harder} push-ups before setting new volume.`
+      summary: `${variation} level complete. Next session assesses ${harder} push-ups before selecting a new starting bracket.`
     };
   }
 
+  const repeatedEarlierWeek = !isGraduationAssessment
+    && state.nextProgramWeekAfterAssessment !== undefined
+    && programWeek < state.nextProgramWeekAfterAssessment;
   return {
     state: assessedState,
-    outcome: isGraduationAssessment ? 'graduated' : 'progressed',
-    summary: `${variation} push-up capacity set at ${reps}; the next workout is recalibrated from that result.`
+    outcome: isGraduationAssessment ? 'graduated' : repeatedEarlierWeek ? 'repeated' : 'progressed',
+    summary: repeatedEarlierWeek
+      ? `${variation} max recorded at ${reps}. Repeat Week ${programWeek} before attempting the next phase.`
+      : `${variation} max recorded at ${reps}. Next: Week ${programWeek}, Day 1 · ${bracket.label}.`
   };
 }
 
@@ -109,30 +140,55 @@ export function getNextPushupState(
   const base = { ...state, sessionsCompleted: state.sessionsCompleted + 1 };
 
   if (exercise.skipped || missedTargets === 1) {
-    return { state: base, outcome: 'repeated', summary: 'Push-up session will repeat before volume increases.' };
+    return { state: base, outcome: 'repeated', summary: `Push-up Week ${state.programWeek}, Day ${state.programDay} will repeat.` };
   }
 
   if (missedTargets > 1) {
+    const previous = previousPushupProgramPosition(state.programWeek, state.programDay);
     return {
-      state: { ...base, programSessionIndex: Math.max(0, state.programSessionIndex - 1), successfulWorkoutsSinceAssessment: 0 },
+      state: {
+        ...base,
+        programWeek: previous.week,
+        programDay: previous.day,
+        programBracket: selectPushupBracket(previous.week, state.baselineMax).id
+      },
       outcome: 'regressed',
-      summary: 'Push-up volume eased one step for a more repeatable session.'
+      summary: `Push-up volume eased to Week ${previous.week}, Day ${previous.day} for a more repeatable session.`
     };
   }
 
-  const successes = state.successfulWorkoutsSinceAssessment + 1;
-  const assessmentDue = successes >= 6;
+  if (state.programDay < 3) {
+    return {
+      state: { ...base, programDay: state.programDay + 1 },
+      outcome: 'progressed',
+      summary: `Push-up program advanced to Week ${state.programWeek}, Day ${state.programDay + 1}.`
+    };
+  }
+
+  if ((PUSHUP_REASSESSMENT_WEEKS as readonly number[]).includes(state.programWeek)) {
+    const nextWeek = state.programWeek === 6 ? 6 : state.programWeek + 1;
+    return {
+      state: {
+        ...base,
+        assessmentDue: true,
+        assessmentVariation: state.currentVariation,
+        assessmentReason: state.programWeek === 6 ? 'final' : 'phase',
+        nextProgramWeekAfterAssessment: nextWeek
+      },
+      outcome: 'progressed',
+      summary: `Week ${state.programWeek} complete. Next session is a ${state.currentVariation} push-up reassessment.`
+    };
+  }
+
+  const nextWeek = Math.min(6, state.programWeek + 1);
   return {
     state: {
       ...base,
-      programSessionIndex: state.programSessionIndex + 1,
-      successfulWorkoutsSinceAssessment: assessmentDue ? 0 : successes,
-      assessmentDue,
-      assessmentVariation: state.currentVariation
+      programWeek: nextWeek,
+      programDay: 1,
+      programBracket: selectPushupBracket(nextWeek, state.baselineMax).id
     },
     outcome: 'progressed',
-    summary: assessmentDue
-      ? `Six solid sessions complete. Next time is a ${state.currentVariation} push-up assessment.`
-      : `Push-up program advanced to session ${state.programSessionIndex + 2}.`
+    summary: `Push-up program advanced to Week ${nextWeek}, Day 1.`
   };
 }

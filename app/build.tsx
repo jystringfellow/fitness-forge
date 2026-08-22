@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { createInitialBuildProfile, PUSHUP_VARIATIONS } from '@/data/buildProgram';
+import { getPushupProgramPrescription } from '@/data/pushupProgram';
 import { loadBuildProfile, resetBuildData, saveBuildProfile } from '@/storage/appStorage';
 import { theme } from '@/theme/brand';
 import { BuildProfile, PushupVariation } from '@/types/build';
@@ -44,11 +45,12 @@ export default function BuildScreen() {
   if (loading) return <View style={styles.center}><Text style={styles.body}>Loading BUILD…</Text></View>;
 
   if (profile?.active) {
+    const pushupProgram = getPushupProgramPrescription(profile.pushup);
     return <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.kicker}>BUILD PROGRAM</Text><Text style={styles.title}>Capability, on purpose.</Text>
       <Text style={styles.body}>Your next workout is already prescribed. Progression remains submaximal and changes only from recorded performance.</Text>
       {profile.pullup.enabled ? <View style={styles.card}><Text style={styles.cardTitle}>First strict pull-up</Text><Text style={styles.metric}>{profile.pullup.currentAssistanceLb === 0 ? `${profile.pullup.bestUnassistedReps} best unassisted` : `${profile.pullup.currentAssistanceLb} lb assistance`}</Text><Text style={styles.body}>Next: {profile.pullup.targetReps.join(' / ')}</Text></View> : null}
-      {profile.pushup.enabled ? <View style={styles.card}><Text style={styles.cardTitle}>50 strict push-ups</Text><Text style={styles.metric}>{profile.pushup.currentVariation} · max {profile.pushup.baselineMax}</Text><Text style={styles.body}>{profile.pushup.goalCompletedAt ? 'Goal complete' : profile.pushup.assessmentDue ? `${profile.pushup.assessmentVariation} assessment next` : `Program session ${profile.pushup.programSessionIndex + 1}`}</Text></View> : null}
+      {profile.pushup.enabled ? <View style={styles.card}><Text style={styles.cardTitle}>50 strict push-ups</Text><Text style={styles.metric}>{profile.pushup.currentVariation} · max {profile.pushup.baselineMax}</Text><Text style={styles.body}>{profile.pushup.goalCompletedAt ? 'Goal complete' : profile.pushup.assessmentDue ? `${profile.pushup.assessmentVariation} assessment next` : `Week ${profile.pushup.programWeek} · Day ${profile.pushup.programDay} · ${pushupProgram.bracket.label}`}</Text></View> : null}
       <TouchableOpacity style={styles.primary} onPress={() => router.push('/')}><Text style={styles.primaryText}>View Today’s Workout</Text></TouchableOpacity>
       <TouchableOpacity style={styles.reset} onPress={async () => { await resetBuildData(); setProfile(null); }}><Text style={styles.resetText}>Restart BUILD setup</Text></TouchableOpacity>
     </ScrollView>;

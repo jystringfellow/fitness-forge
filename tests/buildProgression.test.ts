@@ -3,7 +3,7 @@ import test from 'node:test';
 import { createBuildWorkout, createInitialBuildProfile } from '@/data/buildProgram';
 import { advanceBuildProfile } from '@/lib/buildProgression';
 import { getNextPullupState } from '@/lib/pullupProgression';
-import { applyPushupAssessment, getNextPushupState, getPushupTargets, selectPushupStartingLevel } from '@/lib/pushupProgression';
+import { applyPushupAssessment, getNextPushupState, getPushupTargets } from '@/lib/pushupProgression';
 import {
   BuildProfile,
   BuildWorkoutResult,
@@ -33,9 +33,10 @@ function pushupState(overrides: Partial<PushupProgressionState> = {}): PushupPro
   return {
     enabled: true,
     currentVariation: 'knee',
-    baselineMax: 30,
-    programSessionIndex: 0,
-    successfulWorkoutsSinceAssessment: 0,
+    baselineMax: 18,
+    programWeek: 1,
+    programDay: 1,
+    programBracket: '11-20',
     assessmentDue: false,
     assessmentVariation: 'knee',
     assessments: [],
@@ -130,37 +131,92 @@ test('manual assistance changes recalibrate rather than stacking progression', (
   assert.equal(easier.state.currentAssistanceLb, 45);
 });
 
-test('push-up prescriptions are fluctuating five-set sessions selected from baseline', () => {
+test('push-up prescriptions use the selected table column with a fluctuating final minimum set', () => {
   const targets = getPushupTargets(pushupState());
-  assert.equal(targets.length, 5);
-  assert.ok(new Set(targets).size > 1);
-  assert.deepEqual([selectPushupStartingLevel(5), selectPushupStartingLevel(8), selectPushupStartingLevel(15), selectPushupStartingLevel(24), selectPushupStartingLevel(35)], [0, 1, 2, 3, 4]);
+  assert.deepEqual(targets, [10, 12, 7, 7, 9]);
+  const profile = createInitialBuildProfile({
+    pullupEnabled: false, pullupAssistanceLb: 0, pullupCurrentReps: 0, assistanceIncrementLb: 5,
+    pushupEnabled: true, pushupVariation: 'knee', pushupCurrentMax: 18
+  }, NOW);
+  const pushup = createBuildWorkout(profile, NOW).exercises.find((item) => item.kind === 'push-up');
+  assert.equal(pushup?.sets[4].targetType, 'minimum');
+  assert.equal(pushup?.programContext?.bracket, '11–20');
 });
 
-test('successful push-up workouts advance and schedule an assessment after six successes', () => {
-  let state = pushupState({ successfulWorkoutsSinceAssessment: 5 });
+test('a high initial assessment selects the Week 3 starting phase instead of mislabeling Week 1', () => {
+  const profile = createInitialBuildProfile({
+    pullupEnabled: false, pullupAssistanceLb: 0, pullupCurrentReps: 0, assistanceIncrementLb: 5,
+    pushupEnabled: true, pushupVariation: 'standard', pushupCurrentMax: 24
+  }, NOW);
+  assert.equal(profile.pushup.programWeek, 3);
+  assert.equal(profile.pushup.programBracket, '21-25');
+  const pushup = createBuildWorkout(profile, NOW).exercises.find((item) => item.kind === 'push-up');
+  assert.deepEqual(pushup?.sets.map((set) => set.targetReps), [12, 17, 13, 13, 17]);
+});
+
+test('successful push-up workouts advance by day and reassess after Week 2', () => {
+  const state = pushupState();
   const targets = getPushupTargets(state);
   const update = getNextPushupState(state, exercise('push-up', targets, targets, { variation: 'knee' }), NOW);
-  assert.equal(update.state.programSessionIndex, 1);
-  assert.equal(update.state.assessmentDue, true);
-  assert.equal(update.state.assessmentVariation, 'knee');
+  assert.equal(update.state.programWeek, 1);
+  assert.equal(update.state.programDay, 2);
+
+  const phaseEnd = pushupState({ programWeek: 2, programDay: 3, programBracket: '11-20' });
+  const phaseTargets = getPushupTargets(phaseEnd);
+  const assessed = getNextPushupState(phaseEnd, exercise('push-up', phaseTargets, phaseTargets, { variation: 'knee' }), NOW);
+  assert.equal(assessed.state.assessmentDue, true);
+  assert.equal(assessed.state.nextProgramWeekAfterAssessment, 3);
+  assert.equal(assessed.state.assessmentReason, 'phase');
+});
+
+test('phase boundaries reassess after Weeks 2, 4, 5, and 6', () => {
+  const phases = [
+    { week: 2, baselineMax: 18, bracket: '11-20' as const, next: 3 },
+    { week: 4, baselineMax: 27, bracket: 'over-25' as const, next: 5 },
+    { week: 5, baselineMax: 42, bracket: 'over-40' as const, next: 6 },
+    { week: 6, baselineMax: 48, bracket: '46-50' as const, next: 6 }
+  ];
+  for (const phase of phases) {
+    const state = pushupState({ programWeek: phase.week, programDay: 3, baselineMax: phase.baselineMax, programBracket: phase.bracket });
+    const targets = getPushupTargets(state);
+    const update = getNextPushupState(state, exercise('push-up', targets, targets, { variation: 'knee' }), NOW);
+    assert.equal(update.state.assessmentDue, true);
+    assert.equal(update.state.nextProgramWeekAfterAssessment, phase.next);
+  }
+});
+
+test('a minimum-rep final set accepts and records reps beyond the minimum', () => {
+  const state = pushupState();
+  const targets = getPushupTargets(state);
+  const actuals = [...targets];
+  actuals[actuals.length - 1] = 14;
+  const update = getNextPushupState(state, exercise('push-up', targets, actuals, { variation: 'knee' }), NOW);
+  assert.equal(update.outcome, 'progressed');
+  assert.equal(update.state.programDay, 2);
+  assert.equal(actuals.at(-1), 14);
 });
 
 test('one failed push-up set repeats while several failures regress a program step', () => {
-  const state = pushupState({ programSessionIndex: 3 });
+  const state = pushupState({ programWeek: 3, programDay: 2, programBracket: '16-20' });
   const targets = getPushupTargets(state);
   const oneMiss = [...targets]; oneMiss[4] -= 1;
-  assert.equal(getNextPushupState(state, exercise('push-up', targets, oneMiss, { variation: 'knee' }), NOW).state.programSessionIndex, 3);
+  const repeated = getNextPushupState(state, exercise('push-up', targets, oneMiss, { variation: 'knee' }), NOW).state;
+  assert.deepEqual([repeated.programWeek, repeated.programDay], [3, 2]);
   const manyMisses = targets.map((target, index) => index < 2 ? target - 2 : target);
-  assert.equal(getNextPushupState(state, exercise('push-up', targets, manyMisses, { variation: 'knee' }), NOW).state.programSessionIndex, 2);
+  const regressed = getNextPushupState(state, exercise('push-up', targets, manyMisses, { variation: 'knee' }), NOW).state;
+  assert.deepEqual([regressed.programWeek, regressed.programDay], [3, 1]);
 });
 
-test('assessments update capacity whether it improves or decreases', () => {
-  const state = pushupState({ assessmentDue: true });
+test('phase assessments update brackets and repeat the prior week when the next phase is not ready', () => {
+  const state = pushupState({ programWeek: 2, programDay: 3, assessmentDue: true, nextProgramWeekAfterAssessment: 3, assessmentReason: 'phase' });
   const improved = applyPushupAssessment(state, exercise('assessment', [30], [36], { variation: 'knee' }), NOW);
   assert.equal(improved.state.baselineMax, 36);
-  const decreased = applyPushupAssessment(improved.state, exercise('assessment', [36], [22], { variation: 'knee' }), NOW);
+  assert.equal(improved.state.programWeek, 3);
+  assert.equal(improved.state.programBracket, 'over-25');
+  const decreased = applyPushupAssessment({ ...improved.state, assessmentDue: true, nextProgramWeekAfterAssessment: 5, assessmentReason: 'phase' }, exercise('assessment', [36], [22], { variation: 'knee' }), NOW);
   assert.equal(decreased.state.baselineMax, 22);
+  assert.equal(decreased.state.programWeek, 4);
+  assert.equal(decreased.outcome, 'repeated');
   assert.equal(decreased.state.assessments.length, 2);
 });
 
@@ -172,7 +228,9 @@ test('knee graduation schedules a standard assessment and recalibrates from its 
   const standard = applyPushupAssessment(knee.state, exercise('assessment', [1], [8], { variation: 'standard' }), NOW);
   assert.equal(standard.state.currentVariation, 'standard');
   assert.equal(standard.state.baselineMax, 8);
-  assert.equal(standard.state.programSessionIndex, 1);
+  assert.equal(standard.state.programWeek, 1);
+  assert.equal(standard.state.programDay, 1);
+  assert.equal(standard.state.programBracket, '6-10');
   assert.equal(standard.state.assessmentDue, false);
 });
 
@@ -255,7 +313,7 @@ test('BUILD prescriptions include exercise-specific rest intervals', () => {
   const strengthA = createBuildWorkout(profile, NOW);
   assert.deepEqual(
     Object.fromEntries(strengthA.exercises.map((item) => [item.exerciseId, item.restSecondsBetweenSets])),
-    { 'assisted-pull-up': 120, 'knee-push-up': 90, 'dumbbell-single-leg-rdl': 90, 'kettlebell-swing': 60 }
+    { 'assisted-pull-up': 120, 'knee-push-up': 60, 'dumbbell-single-leg-rdl': 90, 'kettlebell-swing': 60 }
   );
 
   const strengthB = createBuildWorkout({ ...profile, nextTemplateIndex: 1 }, NOW);

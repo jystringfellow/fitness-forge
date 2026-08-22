@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { loadBuildProfile, loadWorkoutHistory } from '@/storage/appStorage';
+import { getPushupProgramPrescription } from '@/data/pushupProgram';
 import { theme } from '@/theme/brand';
 import { BuildProfile, BuildWorkoutResult } from '@/types/build';
 
@@ -17,6 +18,7 @@ export default function ProgressScreen() {
 
   if (!profile?.active) return <View style={styles.center}><Text style={styles.title}>Progress starts with BUILD.</Text><Text style={styles.body}>Set a capability goal, then every result keeps its variation, assistance, targets, and actual performance.</Text><TouchableOpacity style={styles.primary} onPress={() => router.push('/build')}><Text style={styles.primaryText}>Set Up BUILD</Text></TouchableOpacity></View>;
 
+  const pushupProgram = getPushupProgramPrescription(profile.pushup);
   const pullupHistory = results.flatMap((result) => result.exercises.filter((exercise) => exercise.kind === 'pull-up').map((exercise) => ({ date: result.completedAt, exercise })));
   const pushupHistory = results.flatMap((result) => result.exercises.filter((exercise) => exercise.kind === 'push-up' || exercise.kind === 'assessment').map((exercise) => ({ date: result.completedAt, exercise })));
   const assistancePath = [...new Set(pullupHistory.map(({ exercise }) => exercise.completedSets.find((set) => set.status === 'completed')?.actualAssistanceLb).filter((value): value is number => value !== undefined))];
@@ -35,7 +37,7 @@ export default function ProgressScreen() {
     {profile.pushup.enabled ? <View style={styles.card}>
       <Text style={styles.cardKicker}>PUSH-UP</Text><Text style={styles.cardTitle}>50 consecutive standard</Text>
       <Text style={styles.metric}>{profile.pushup.goalCompletedAt ? '50 · complete' : `${profile.pushup.currentVariation} · ${profile.pushup.baselineMax} max`}</Text>
-      <Text style={styles.body}>{profile.pushup.assessmentDue ? `${profile.pushup.assessmentVariation} assessment next` : `Program session ${profile.pushup.programSessionIndex + 1}`}</Text>
+      <Text style={styles.body}>{profile.pushup.assessmentDue ? `${profile.pushup.assessmentVariation} assessment next` : `Week ${profile.pushup.programWeek} · Day ${profile.pushup.programDay} · ${pushupProgram.bracket.label}`}</Text>
       <View style={styles.track}><View style={[styles.fill, { width: `${Math.min(100, (profile.pushup.bestStandardReps / 50) * 100)}%` }]} /></View>
       <Text style={styles.path}>Standard max · {profile.pushup.bestStandardReps} / 50</Text>
       <View style={styles.stats}><View><Text style={styles.statValue}>{profile.pushup.sessionsCompleted}</Text><Text style={styles.statLabel}>sessions</Text></View><View><Text style={styles.statValue}>{profile.pushup.assessments.length}</Text><Text style={styles.statLabel}>assessments</Text></View></View>

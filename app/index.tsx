@@ -7,7 +7,7 @@ import { brandIcon, theme } from '@/theme/brand';
 import { BuildProfile, BuildWorkoutPrescription, BuildWorkoutResult } from '@/types/build';
 
 function setSummary(exercise: BuildWorkoutPrescription['exercises'][number]): string {
-  const reps = exercise.sets.map((set) => set.targetReps).join(' / ');
+  const reps = exercise.sets.map((set) => `${set.targetReps}${set.targetType === 'minimum' ? '+' : ''}`).join(' / ');
   const first = exercise.sets[0];
   if (first?.targetAssistanceLb !== undefined) return `${reps} · ${first.targetAssistanceLb} lb assistance`;
   if (first?.targetLoadLb) return `${reps}${first.perSide ? ' / side' : ''} · ${first.targetLoadLb} lb`;

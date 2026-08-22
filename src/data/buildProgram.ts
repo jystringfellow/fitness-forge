@@ -7,7 +7,7 @@ import {
   PrescribedSet,
   PushupVariation
 } from '@/types/build';
-import { getPushupTargets } from '@/lib/pushupProgression';
+import { getInitialPushupProgramWeek, getPushupProgramPrescription, PushupSetTarget, selectPushupBracket } from '@/data/pushupProgram';
 
 export const PUSHUP_VARIATIONS: Array<{ id: PushupVariation; label: string }> = [
   { id: 'wall', label: 'Wall' },
@@ -64,10 +64,11 @@ const DEFAULT_ACCESSORY_LOADS: Record<string, number> = {
   'dead-bug': 0
 };
 
-function makeSets(prefix: string, reps: number[], options?: { loadLb?: number; assistanceLb?: number; perSide?: boolean }): PrescribedSet[] {
-  return reps.map((targetReps, index) => ({
+function makeSets(prefix: string, targets: Array<number | PushupSetTarget>, options?: { loadLb?: number; assistanceLb?: number; perSide?: boolean }): PrescribedSet[] {
+  return targets.map((target, index) => ({
     id: `${prefix}-set-${index + 1}`,
-    targetReps,
+    targetReps: typeof target === 'number' ? target : target.reps,
+    targetType: typeof target === 'number' ? 'fixed' : target.type,
     targetLoadLb: options?.loadLb,
     targetAssistanceLb: options?.assistanceLb,
     perSide: options?.perSide
@@ -77,9 +78,12 @@ function makeSets(prefix: string, reps: number[], options?: { loadLb?: number; a
 export function createInitialBuildProfile(input: BuildSetupInput, now = new Date().toISOString()): BuildProfile {
   const assistance = Math.max(0, input.pullupAssistanceLb);
   const pullupStart = assistance === 0 ? [1, 1, 1] : [6, 6, 6];
+  const pushupBaseline = Math.max(1, input.pushupCurrentMax);
+  const pushupWeek = getInitialPushupProgramWeek(pushupBaseline);
+  const pushupBracket = selectPushupBracket(pushupWeek, pushupBaseline);
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     active: true,
     createdAt: now,
     updatedAt: now,
@@ -97,12 +101,20 @@ export function createInitialBuildProfile(input: BuildSetupInput, now = new Date
     pushup: {
       enabled: input.pushupEnabled,
       currentVariation: input.pushupVariation,
-      baselineMax: Math.max(1, input.pushupCurrentMax),
-      programSessionIndex: 0,
-      successfulWorkoutsSinceAssessment: 0,
+      baselineMax: pushupBaseline,
+      programWeek: pushupWeek,
+      programDay: 1,
+      programBracket: pushupBracket.id,
       assessmentDue: false,
       assessmentVariation: input.pushupVariation,
-      assessments: [],
+      assessments: input.pushupEnabled ? [{
+        id: `assessment-baseline-${Date.parse(now) || Date.now()}`,
+        variation: input.pushupVariation,
+        reps: pushupBaseline,
+        completedAt: now,
+        reason: 'baseline',
+        programWeek: pushupWeek
+      }] : [],
       bestStandardReps: input.pushupVariation === 'standard' ? Math.max(0, input.pushupCurrentMax) : 0,
       sessionsCompleted: 0,
       goalCompletedAt: input.pushupVariation === 'standard' && input.pushupCurrentMax >= 50 ? now : undefined
@@ -137,7 +149,10 @@ export function createBuildWorkout(profile: BuildProfile, now = new Date().toISO
   if (profile.pushup.enabled && !profile.pushup.goalCompletedAt) {
     const assessment = profile.pushup.assessmentDue;
     const variation = assessment ? profile.pushup.assessmentVariation : profile.pushup.currentVariation;
-    const targets = assessment ? [Math.max(1, profile.pushup.baselineMax)] : getPushupTargets(profile.pushup);
+    const program = getPushupProgramPrescription(profile.pushup);
+    const targets: Array<number | PushupSetTarget> = assessment
+      ? [{ type: 'minimum', reps: Math.max(1, profile.pushup.baselineMax) }]
+      : program.sets;
     exercises.push({
       id: `${workoutId}-pushup`,
       exerciseId: `${variation}-push-up`,
@@ -146,9 +161,14 @@ export function createBuildWorkout(profile: BuildProfile, now = new Date().toISO
       variation,
       sets: makeSets(`${workoutId}-pushup`, targets),
       cue: assessment ? 'One maximum set of strict, good-form reps. Stop when form changes.' : 'Keep a rigid body line and leave a little in reserve.',
-      progressionLabel: assessment ? 'Maximum consecutive good-form reps' : `Program session ${profile.pushup.programSessionIndex + 1}`,
+      progressionLabel: assessment ? 'Maximum consecutive good-form reps' : `Week ${program.week} · Day ${program.day} · ${program.bracket.label}`,
       equipment: variation === 'incline' ? ['bodyweight', 'step-platform'] : ['bodyweight'],
-      restSecondsBetweenSets: assessment ? 0 : 90
+      restSecondsBetweenSets: assessment ? 0 : program.restSeconds,
+      programContext: {
+        week: program.week,
+        day: program.day,
+        bracket: program.bracket.label
+      }
     });
   }
 

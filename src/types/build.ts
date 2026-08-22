@@ -7,6 +7,19 @@ export type BuildTemplateId = 'strength-a' | 'strength-b' | 'strength-c';
 export type PrescriptionKind = 'pull-up' | 'push-up' | 'accessory' | 'assessment';
 export type SetStatus = 'pending' | 'completed' | 'skipped';
 export type PushupVariation = 'wall' | 'incline' | 'knee' | 'standard';
+export type PushupBracketId =
+  | 'under-5'
+  | '6-10'
+  | '11-20'
+  | '16-20'
+  | '21-25'
+  | 'over-25'
+  | '31-35'
+  | '36-40'
+  | 'over-40'
+  | '46-50'
+  | '51-60'
+  | 'over-60';
 
 export interface PullupProgressionState {
   enabled: boolean;
@@ -24,16 +37,21 @@ export interface PushupAssessment {
   variation: PushupVariation;
   reps: number;
   completedAt: string;
+  reason?: 'baseline' | 'phase' | 'graduation' | 'final';
+  programWeek?: number;
 }
 
 export interface PushupProgressionState {
   enabled: boolean;
   currentVariation: PushupVariation;
   baselineMax: number;
-  programSessionIndex: number;
-  successfulWorkoutsSinceAssessment: number;
+  programWeek: number;
+  programDay: number;
+  programBracket: PushupBracketId;
   assessmentDue: boolean;
   assessmentVariation: PushupVariation;
+  assessmentReason?: PushupAssessment['reason'];
+  nextProgramWeekAfterAssessment?: number;
   graduationFrom?: PushupVariation;
   assessments: PushupAssessment[];
   bestStandardReps: number;
@@ -47,7 +65,7 @@ export interface AccessoryState {
 }
 
 export interface BuildProfile {
-  schemaVersion: 1;
+  schemaVersion: 2;
   active: boolean;
   createdAt: string;
   updatedAt: string;
@@ -63,6 +81,7 @@ export interface PrescribedSet {
   targetLoadLb?: number;
   targetAssistanceLb?: number;
   perSide?: boolean;
+  targetType?: 'fixed' | 'minimum';
 }
 
 export interface ExercisePrescription {
@@ -77,6 +96,11 @@ export interface ExercisePrescription {
   progressionLabel?: string;
   equipment: EquipmentId[];
   restSecondsBetweenSets: number;
+  programContext?: {
+    week: number;
+    day: number;
+    bracket: string;
+  };
 }
 
 export interface BuildWorkoutPrescription {
@@ -108,6 +132,7 @@ export interface CompletedExercise {
   skipped: boolean;
   notes?: string;
   restSecondsBetweenSets?: number;
+  programContext?: ExercisePrescription['programContext'];
 }
 
 export interface BuildWorkoutResult {

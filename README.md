@@ -11,18 +11,19 @@ BUILD answers “What should I do today to slowly get better?” It provides a M
 The first two capabilities are:
 
 - First strict pull-up: build assisted volume, confirm the top rep target twice, reduce assistance, recalibrate, then accumulate unassisted reps.
-- 50 consecutive strict push-ups: build submaximal five-set volume at wall, incline, knee, or standard push-ups; assess periodically; and recalibrate after graduating to a harder variation.
+- 50 consecutive strict push-ups: follow a table-driven six-week program at wall, incline, knee, or standard push-ups; reassess between phases; and recalibrate after graduating to a harder variation.
 
 FORGE answers “Give me a good workout today.” It preserves the existing randomized generator, including time, focus, energy, attachment selection, cardio/plyometric work, interval timing, spoken transitions, and optional finishers.
 
 Both sources write to one workout history while retaining source-specific context. BUILD records variation, assistance/load, program position, and planned-versus-actual performance. FORGE records its generated session summary.
 
-BUILD prescriptions also include exercise-specific recovery guidance. Completing a non-final set starts a dismissible countdown: two minutes for pull-ups and heavier Romanian deadlifts, 90 seconds for push-ups and moderate strength work, and 45–60 seconds for lighter accessories, core work, and swings.
+BUILD prescriptions also include exercise-specific recovery guidance. Completing a non-final set starts a countdown that can be paused, extended, or skipped. Push-up rest comes directly from the selected program day and ranges from 45 to 120 seconds; longer rest is always allowed.
 
 ## Architecture
 
 - `src/types/build.ts` — BUILD profiles, prescriptions, results, assessments, milestones, and unified history types
 - `src/data/buildProgram.ts` — editable Strength A/B/C templates and prescription construction
+- `src/data/pushupProgram.ts` — exact six-week push-up tables, rep brackets, semantic minimum sets, and rest intervals
 - `src/data/equipment.ts` — small reusable equipment catalog with available loads
 - `src/lib/pullupProgression.ts` — pure assisted and unassisted pull-up progression
 - `src/lib/pushupProgression.ts` — pure push-up programming, assessment, and variation graduation
@@ -44,7 +45,9 @@ The algorithms favor repeatable training:
 - Skipped workouts do not advance or punish the program.
 - Long breaks do not cause automatic regression.
 - Manual load or assistance changes are stored as actual performance and cause conservative recalibration.
-- Push-up assessments occur after six successful program sessions, not every workout.
+- Push-up assessments occur after Weeks 2, 4, 5, and 6. The result selects the next phase bracket; an insufficient result repeats the prior week without punishment.
+
+The push-up table contains 18 sessions. Weeks 1–4 prescribe five sets, Weeks 5–6 include selected eight- and nine-set days, and every final set is an `N+` minimum rather than a fixed stopping point. Program week/day/bracket and movement variation are stored independently, so graduating to a harder variation always starts with a new assessment and bracket recalibration. Assessments of 20 reps or fewer enter Week 1; higher starting assessments enter Week 3. Weeks 5 and 6 remain reassessment-gated.
 
 ## Adding another capability
 
