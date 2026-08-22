@@ -14,6 +14,34 @@ export const FOCUS_OPTIONS = [
 ] as const;
 export type Focus = (typeof FOCUS_OPTIONS)[number];
 
+export type WorkoutBlockItemType = 'cardio_warmup' | 'cardio_sequence' | 'main_work' | 'main_rest';
+
+export interface WorkoutBlockItem {
+  text: string;
+  type: ExerciseType;
+  value: number;
+}
+
+export interface WorkoutIntervalStep {
+  text: string;
+  durationSecs: number;
+  isRest: boolean;
+  round?: number;
+  totalRounds?: number;
+  exerciseName?: string;
+  reps?: number;
+  section?: 'cardio' | 'main' | 'finisher';
+  isPrompt?: boolean;
+  actionLabel?: string;
+  skipLabel?: string;
+}
+
+export interface CardioStep {
+  exercise: string;
+  workSecs: number;
+  restSecs?: number;
+}
+
 export const ATTACHMENT_OPTIONS = [
   'recommended',
   'ankle-cuffs',
@@ -48,6 +76,8 @@ export type ExerciseTag =
   | 'sprint'
   | 'stability';
 
+export type ExerciseType = 'time' | 'rep';
+
 export interface Exercise {
   id: string;
   name: string;
@@ -55,6 +85,7 @@ export interface Exercise {
   tags: ExerciseTag[];
   focus: Focus[];
   cue: string;
+  durationType?: ExerciseType;
 }
 
 export interface GenerateWorkoutInput {
@@ -68,11 +99,18 @@ export interface WorkoutPlan {
   title: string;
   createdAt: string;
   input: GenerateWorkoutInput;
-  cardioBlock: string[];
+  cardioBlock: WorkoutBlockItem[];
+  intervalSteps: WorkoutIntervalStep[];
   mainBlock: {
     rounds: number;
     workSeconds: number;
     restSeconds: number;
+    format?: string;
+    roundIntervals?: Array<{
+      label: string;
+      workSeconds: number;
+      restSeconds: number;
+    }>;
     exercises: Exercise[];
   };
   note?: string;

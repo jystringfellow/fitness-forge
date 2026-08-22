@@ -8,12 +8,10 @@ This repo now includes a V1 starter built with Expo Router for iOS, Android, and
 
 ### Included features
 
-- Quick Generate screen with selectors for time, energy, focus, and attachment
-- Workout result screen with cardio block + single attachment block
-- Exercise library
-- Favorites (local storage)
-- History (local storage)
-- Settings placeholder for phase 2 ideas
+- Two-step workout generation with selectors for time, energy, focus, and attachment
+- Guided interval timer with spoken transitions, sound cues, rep tracking, and an optional finisher
+- Persistent current workout for returning to an active session
+- Searchable exercise library with attachment details and coaching cues
 
 ### Run locally (pnpm)
 
@@ -28,6 +26,9 @@ Then open on iOS, Android, or web through Expo.
 
 ```bash
 pnpm typecheck
+pnpm test
+pnpm check:expo
+pnpm build:web
 pnpm web
 pnpm ios
 pnpm android
