@@ -34,20 +34,21 @@ const ACCESSORY_TEMPLATES: Record<BuildTemplateId, Array<{
   perSide?: boolean;
   cue: string;
   optional?: boolean;
+  equipment: ExercisePrescription['equipment'];
 }>> = {
   'strength-a': [
-    { exerciseId: 'dumbbell-single-leg-rdl', name: 'Single-Leg Romanian Deadlift', reps: 8, sets: 3, perSide: true, cue: 'Reach hips back and stay long from head to heel.' },
-    { exerciseId: 'kettlebell-swing', name: 'Kettlebell Swing', reps: 15, sets: 3, cue: 'Snap the hips; let the bell float.' }
+    { exerciseId: 'dumbbell-single-leg-rdl', name: 'Single-Leg Romanian Deadlift', reps: 8, sets: 3, perSide: true, cue: 'Reach hips back and stay long from head to heel.', equipment: ['dumbbells'] },
+    { exerciseId: 'kettlebell-swing', name: 'Kettlebell Swing', reps: 15, sets: 3, cue: 'Snap the hips; let the bell float.', equipment: ['kettlebell'] }
   ],
   'strength-b': [
-    { exerciseId: 'dumbbell-squat-press', name: 'Squat to Overhead Press', reps: 8, sets: 3, cue: 'Stand tall before finishing the press.' },
-    { exerciseId: 'dumbbell-rdl', name: 'Romanian Deadlift', reps: 8, sets: 3, cue: 'Keep a long spine and push the hips back.' },
-    { exerciseId: 'step-up', name: 'Step-Up', reps: 8, sets: 2, perSide: true, cue: 'Drive through the whole lead foot.', optional: true }
+    { exerciseId: 'dumbbell-squat-press', name: 'Squat to Overhead Press', reps: 8, sets: 3, cue: 'Stand tall before finishing the press.', equipment: ['dumbbells'] },
+    { exerciseId: 'dumbbell-rdl', name: 'Romanian Deadlift', reps: 8, sets: 3, cue: 'Keep a long spine and push the hips back.', equipment: ['dumbbells'] },
+    { exerciseId: 'step-up', name: 'Step-Up', reps: 8, sets: 2, perSide: true, cue: 'Drive through the whole lead foot.', optional: true, equipment: ['dumbbells', 'step-platform'] }
   ],
   'strength-c': [
-    { exerciseId: 'dumbbell-squat-press-light', name: 'Light Squat to Press', reps: 8, sets: 2, cue: 'Keep this crisp and comfortably submaximal.' },
-    { exerciseId: 'kettlebell-swing-light', name: 'Light Kettlebell Swing', reps: 12, sets: 2, cue: 'Stop while every rep is still fast.' },
-    { exerciseId: 'dead-bug', name: 'Dead Bug', reps: 6, sets: 2, perSide: true, cue: 'Move slowly without letting the ribs flare.', optional: true }
+    { exerciseId: 'dumbbell-squat-press-light', name: 'Light Squat to Press', reps: 8, sets: 2, cue: 'Keep this crisp and comfortably submaximal.', equipment: ['dumbbells'] },
+    { exerciseId: 'kettlebell-swing-light', name: 'Light Kettlebell Swing', reps: 12, sets: 2, cue: 'Stop while every rep is still fast.', equipment: ['kettlebell'] },
+    { exerciseId: 'dead-bug', name: 'Dead Bug', reps: 6, sets: 2, perSide: true, cue: 'Move slowly without letting the ribs flare.', optional: true, equipment: ['bodyweight'] }
   ]
 };
 
@@ -126,7 +127,8 @@ export function createBuildWorkout(profile: BuildProfile, now = new Date().toISO
       variation: unassisted ? 'unassisted' : 'assisted',
       sets: makeSets(`${workoutId}-pullup`, profile.pullup.targetReps, { assistanceLb: profile.pullup.currentAssistanceLb }),
       cue: 'Start each rep long, keep the body quiet, and drive elbows down.',
-      progressionLabel: unassisted ? 'Building strict pull-up capacity' : `${profile.pullup.currentAssistanceLb} lb assistance`
+      progressionLabel: unassisted ? 'Building strict pull-up capacity' : `${profile.pullup.currentAssistanceLb} lb assistance`,
+      equipment: unassisted ? ['bodyweight', 'pull-up-bar'] : ['pull-up-bar', 'functional-trainer']
     });
   }
 
@@ -142,7 +144,8 @@ export function createBuildWorkout(profile: BuildProfile, now = new Date().toISO
       variation,
       sets: makeSets(`${workoutId}-pushup`, targets),
       cue: assessment ? 'One maximum set of strict, good-form reps. Stop when form changes.' : 'Keep a rigid body line and leave a little in reserve.',
-      progressionLabel: assessment ? 'Maximum consecutive good-form reps' : `Program session ${profile.pushup.programSessionIndex + 1}`
+      progressionLabel: assessment ? 'Maximum consecutive good-form reps' : `Program session ${profile.pushup.programSessionIndex + 1}`,
+      equipment: variation === 'incline' ? ['bodyweight', 'step-platform'] : ['bodyweight']
     });
   }
 
@@ -159,7 +162,8 @@ export function createBuildWorkout(profile: BuildProfile, now = new Date().toISO
       }),
       cue: accessory.cue,
       optional: accessory.optional,
-      progressionLabel: accessory.perSide ? 'Each side' : undefined
+      progressionLabel: accessory.perSide ? 'Each side' : undefined,
+      equipment: accessory.equipment
     });
   });
 

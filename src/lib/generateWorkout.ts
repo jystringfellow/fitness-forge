@@ -685,6 +685,7 @@ export function generateWorkoutPlan(
   const intervalSteps = includeIntervalSteps ? buildIntervalSteps(cardioIntervalSteps, mainBlock, note) : [];
 
   return {
+    source: 'FORGE',
     title: `${input.time}-min ${input.focus} forge`,
     createdAt: new Date().toISOString(),
     input: { ...input, attachment },

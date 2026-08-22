@@ -1,3 +1,5 @@
+import { EquipmentId } from '@/types/workout';
+
 export type WorkoutSource = 'BUILD' | 'FORGE';
 
 export type BuildGoalId = 'first-pull-up' | 'fifty-push-ups';
@@ -73,6 +75,7 @@ export interface ExercisePrescription {
   cue: string;
   optional?: boolean;
   progressionLabel?: string;
+  equipment: EquipmentId[];
 }
 
 export interface BuildWorkoutPrescription {

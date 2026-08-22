@@ -25,9 +25,14 @@ export default function RootLayout() {
           sceneStyle: { backgroundColor: theme.colors.background }
         }}
       >
-        <Tabs.Screen name="index" options={{ title: 'Generate' }} />
-        <Tabs.Screen name="workout" options={{ title: 'Result' }} />
-        <Tabs.Screen name="library" options={{ title: 'Library' }} />
+        <Tabs.Screen name="index" options={{ title: 'Today' }} />
+        <Tabs.Screen name="build" options={{ title: 'Build' }} />
+        <Tabs.Screen name="forge" options={{ title: 'Forge' }} />
+        <Tabs.Screen name="progress" options={{ title: 'Progress' }} />
+        <Tabs.Screen name="history" options={{ title: 'History' }} />
+        <Tabs.Screen name="workout" options={{ href: null, title: 'FORGE Workout' }} />
+        <Tabs.Screen name="build-workout" options={{ href: null, title: 'BUILD Workout' }} />
+        <Tabs.Screen name="library" options={{ href: null, title: 'Library' }} />
       </Tabs>
     </>
   );

@@ -4,6 +4,7 @@ import * as Speech from 'expo-speech';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { loadCurrentWorkout, setCurrentWorkout } from '@/storage/workoutStorage';
+import { recordForgeCompletion } from '@/storage/appStorage';
 import { brandIcon, theme } from '@/theme/brand';
 import { WorkoutIntervalStep, WorkoutPlan } from '@/types/workout';
 
@@ -91,6 +92,7 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
   const [repCount, setRepCount] = useState<number>(0);
   const [timeRemaining, setTimeRemaining] = useState<number>(() => steps[0]?.durationSecs ?? 0);
   const transitionPlayer = useAudioPlayer(transitionChime);
+  const recordedCompletionRef = useRef(false);
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const spokenWarningRef = useRef<string | null>(null);
@@ -144,6 +146,15 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
       Speech.stop();
     };
   }, [plan.createdAt]);
+
+  useEffect(() => {
+    if (timerState === 'completed' && !recordedCompletionRef.current) {
+      recordedCompletionRef.current = true;
+      recordForgeCompletion(plan).catch(() => {
+        recordedCompletionRef.current = false;
+      });
+    }
+  }, [plan, timerState]);
 
   useEffect(() => {
     transitionPlayer.volume = 0.75;
@@ -376,7 +387,7 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
         {plan.note ? <Text style={styles.note}>{plan.note}</Text> : null}
 
         <View style={styles.buttonContainer}>
-          <TouchableOpacity style={styles.generateButton} onPress={() => router.push('/')}>
+          <TouchableOpacity style={styles.generateButton} onPress={() => router.push('/forge')}>
             <Text style={styles.generateText}>Generate Another</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.resetButton} onPress={resetTimer}>

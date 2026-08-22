@@ -1,311 +1,150 @@
-import { useState } from 'react';
-import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { useRouter } from 'expo-router';
-import { generateWorkout } from '@/lib/generateWorkout';
+import { useCallback, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { createBuildWorkout } from '@/data/buildProgram';
+import { loadActiveBuildWorkout, loadBuildProfile, loadWorkoutHistory, saveActiveBuildWorkout } from '@/storage/appStorage';
 import { brandIcon, theme } from '@/theme/brand';
-import {
-  ATTACHMENT_OPTIONS,
-  ENERGY_OPTIONS,
-  FOCUS_OPTIONS,
-  TIME_OPTIONS,
-  Attachment,
-  Energy,
-  Focus,
-  TimeOption,
-  WorkoutPlan
-} from '@/types/workout';
-import { setCurrentWorkout } from '@/storage/workoutStorage';
+import { BuildProfile, BuildWorkoutPrescription, BuildWorkoutResult } from '@/types/build';
 
-function Chip<T extends string | number>({
-  label,
-  active,
-  onPress
-}: {
-  label: T;
-  active: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity style={[styles.chip, active && styles.chipActive]} onPress={onPress}>
-      <Text style={[styles.chipText, active && styles.chipTextActive]}>{String(label)}</Text>
-    </TouchableOpacity>
-  );
+function setSummary(exercise: BuildWorkoutPrescription['exercises'][number]): string {
+  const reps = exercise.sets.map((set) => set.targetReps).join(' / ');
+  const first = exercise.sets[0];
+  if (first?.targetAssistanceLb !== undefined) return `${reps} · ${first.targetAssistanceLb} lb assistance`;
+  if (first?.targetLoadLb) return `${reps}${first.perSide ? ' / side' : ''} · ${first.targetLoadLb} lb`;
+  return `${reps}${first?.perSide ? ' / side' : ''}`;
 }
 
-function formatLabel(value: string | number) {
-  return String(value).replace(/-/g, ' ');
-}
-
-export default function GenerateScreen() {
+export default function TodayScreen() {
   const router = useRouter();
-  const [time, setTime] = useState<TimeOption>(20);
-  const [energy, setEnergy] = useState<Energy>('normal');
-  const [focus, setFocus] = useState<Focus>('full body');
-  const [attachment, setAttachment] = useState<Attachment>('recommended');
-  const [generatedPlan, setGeneratedPlan] = useState<WorkoutPlan | null>(null);
+  const [profile, setProfile] = useState<BuildProfile | null>(null);
+  const [workout, setWorkout] = useState<BuildWorkoutPrescription | null>(null);
+  const [lastResult, setLastResult] = useState<BuildWorkoutResult | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const clearGeneratedPlan = () => setGeneratedPlan(null);
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    const refresh = async () => {
+      const savedProfile = await loadBuildProfile();
+      if (!active) return;
+      setProfile(savedProfile);
+      if (savedProfile?.active) {
+        let savedWorkout = await loadActiveBuildWorkout();
+        if (!savedWorkout) {
+          savedWorkout = createBuildWorkout(savedProfile);
+          await saveActiveBuildWorkout(savedWorkout);
+        }
+        const history = await loadWorkoutHistory();
+        if (!active) return;
+        setWorkout(savedWorkout);
+        setLastResult((history.find((entry) => entry.source === 'BUILD') as BuildWorkoutResult | undefined) ?? null);
+      } else {
+        setWorkout(null);
+        setLastResult(null);
+      }
+      setLoading(false);
+    };
+    refresh().catch(() => setLoading(false));
+    return () => { active = false; };
+  }, []));
 
-  const onGenerate = () => {
-    setGeneratedPlan(generateWorkout({ time, energy, focus, attachment }, true));
-  };
+  if (loading) {
+    return <View style={styles.center}><ActivityIndicator color={theme.colors.lime} /><Text style={styles.muted}>Preparing today…</Text></View>;
+  }
 
-  const onStartWorkout = async () => {
-    if (!generatedPlan) {
-      return;
-    }
-
-    await setCurrentWorkout(generatedPlan);
-    router.push('/workout');
-  };
+  if (!profile?.active || !workout) {
+    return (
+      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+        <View style={styles.hero}>
+          <Image source={brandIcon} style={styles.mark} />
+          <Text style={styles.kicker}>BUILD + FORGE</Text>
+          <Text style={styles.title}>Build your capabilities. Forge your fitness.</Text>
+          <Text style={styles.body}>Structured progress when you have a goal. A varied workout when you want to move.</Text>
+        </View>
+        <View style={styles.modeCard}>
+          <Text style={styles.modeBadge}>BUILD</Text>
+          <Text style={styles.cardTitle}>Turn “not yet” into “I can.”</Text>
+          <Text style={styles.body}>Set up pull-up and push-up goals once. Fitness Forge will remember, prescribe, and progress your Monday, Wednesday, and Friday sessions.</Text>
+          <TouchableOpacity accessibilityRole="button" style={styles.primary} onPress={() => router.push('/build')}>
+            <Text style={styles.primaryText}>Activate BUILD</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.modeCard}>
+          <Text style={[styles.modeBadge, styles.forgeBadge]}>FORGE</Text>
+          <Text style={styles.cardTitle}>Make today’s workout.</Text>
+          <Text style={styles.body}>Choose time, focus, energy, and equipment. Keep the variety you already know.</Text>
+          <TouchableOpacity accessibilityRole="button" style={styles.secondary} onPress={() => router.push('/forge')}>
+            <Text style={styles.secondaryText}>Open FORGE</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    );
+  }
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.hero}>
-        <View style={styles.heroTopline}>
-          <View style={styles.brandRow}>
-            <Image source={brandIcon} style={styles.brandMark} />
-            <Text style={styles.kicker}>Daily session</Text>
-          </View>
-          <Text style={styles.heroBadge}>Fresh build</Text>
+      <View style={styles.todayHeader}>
+        <View>
+          <Text style={styles.kicker}>NEXT BUILD · {workout.scheduledDay.toUpperCase()}</Text>
+          <Text style={styles.title}>{workout.title}</Text>
         </View>
-        <Text style={styles.title}>Fitness Forge</Text>
-        <Text style={styles.subtitle}>
-          Pick the shape of today's work, generate a session, then decide if it earns a start.
-        </Text>
+        <Text style={styles.buildBadge}>BUILD</Text>
       </View>
+      <Text style={styles.body}>Your next scheduled session is ready. Missed days do not create debt—continue when you can.</Text>
 
-      {!generatedPlan ? (
-        <>
-          <View style={styles.sectionPanel}>
-            <Text style={styles.section}>Time available</Text>
-            <View style={styles.row}>
-              {TIME_OPTIONS.map((option) => (
-                <Chip
-                  key={option}
-                  label={`${option} min`}
-                  active={time === option}
-                  onPress={() => {
-                    setTime(option);
-                    clearGeneratedPlan();
-                  }}
-                />
-              ))}
-            </View>
-
-            <Text style={styles.section}>Energy</Text>
-            <View style={styles.row}>
-              {ENERGY_OPTIONS.map((option) => (
-                <Chip
-                  key={option}
-                  label={formatLabel(option)}
-                  active={energy === option}
-                  onPress={() => {
-                    setEnergy(option);
-                    clearGeneratedPlan();
-                  }}
-                />
-              ))}
-            </View>
-
-            <Text style={styles.section}>Focus</Text>
-            <View style={styles.row}>
-              {FOCUS_OPTIONS.map((option) => (
-                <Chip
-                  key={option}
-                  label={formatLabel(option)}
-                  active={focus === option}
-                  onPress={() => {
-                    setFocus(option);
-                    clearGeneratedPlan();
-                  }}
-                />
-              ))}
-            </View>
-
-            <Text style={styles.section}>Attachment</Text>
-            <View style={styles.row}>
-              {ATTACHMENT_OPTIONS.map((option) => (
-                <Chip
-                  key={option}
-                  label={formatLabel(option)}
-                  active={attachment === option}
-                  onPress={() => {
-                    setAttachment(option);
-                    clearGeneratedPlan();
-                  }}
-                />
-              ))}
-            </View>
+      {workout.exercises.map((exercise) => (
+        <View key={exercise.id} style={styles.exerciseCard}>
+          <View style={styles.exerciseTopline}>
+            <Text style={styles.exerciseName}>{exercise.name}</Text>
+            {exercise.optional ? <Text style={styles.optional}>OPTIONAL</Text> : null}
           </View>
-
-          <TouchableOpacity style={styles.generateButton} onPress={onGenerate}>
-            <Text style={styles.generateText}>Generate Workout</Text>
-          </TouchableOpacity>
-        </>
-      ) : (
-        <View style={styles.reviewPanel}>
-          <View style={styles.reviewTopline}>
-            <Text style={styles.section}>Generated workout</Text>
-            <Text style={styles.reviewBadge}>{generatedPlan.mainBlock.rounds} rounds</Text>
-          </View>
-          <Text style={styles.reviewTitle}>{generatedPlan.title}</Text>
-          <View style={styles.choiceSummary}>
-            <Text style={styles.choicePill}>{generatedPlan.input.time} min</Text>
-            <Text style={styles.choicePill}>{formatLabel(generatedPlan.input.energy)}</Text>
-            <Text style={styles.choicePill}>{formatLabel(generatedPlan.input.focus)}</Text>
-            <Text style={styles.choicePill}>{formatLabel(generatedPlan.input.attachment)}</Text>
-          </View>
-
-          <View style={styles.previewRow}>
-            <Text style={styles.previewLabel}>Cardio</Text>
-            <Text style={styles.previewValue}>{generatedPlan.cardioBlock.slice(1).map((item) => item.text).join(' + ')}</Text>
-          </View>
-          <View style={styles.previewRow}>
-            <Text style={styles.previewLabel}>Main</Text>
-            <Text style={styles.previewValue}>
-              {generatedPlan.mainBlock.format ?? `${generatedPlan.mainBlock.workSeconds}s / ${generatedPlan.mainBlock.restSeconds}s`}
-            </Text>
-          </View>
-          <View style={styles.moveList}>
-            {generatedPlan.mainBlock.exercises.map((exercise) => (
-              <Text key={exercise.id} style={styles.moveItem}>{exercise.name}</Text>
-            ))}
-          </View>
-          {generatedPlan.note ? <Text style={styles.note}>{generatedPlan.note}</Text> : null}
-
-          <View style={styles.reviewActions}>
-            <TouchableOpacity style={styles.secondaryButton} onPress={() => setGeneratedPlan(null)}>
-              <Text style={styles.secondaryText}>Adjust Inputs</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.secondaryButton} onPress={onGenerate}>
-              <Text style={styles.secondaryText}>Regenerate</Text>
-            </TouchableOpacity>
-          </View>
-          <TouchableOpacity style={styles.generateButton} onPress={onStartWorkout}>
-            <Text style={styles.generateText}>Start This Workout</Text>
-          </TouchableOpacity>
+          <Text style={styles.prescription}>{setSummary(exercise)}</Text>
+          {exercise.progressionLabel ? <Text style={styles.progression}>{exercise.progressionLabel}</Text> : null}
+          {lastResult ? (() => {
+            const last = lastResult.exercises.find((item) => item.kind === exercise.kind && item.variation === exercise.variation);
+            if (!last) return null;
+            const actual = last.completedSets.filter((set) => set.status === 'completed').map((set) => set.actualReps).join(' / ');
+            return actual ? <Text style={styles.last}>Last time: {actual}</Text> : null;
+          })() : null}
         </View>
-      )}
+      ))}
+
+      <TouchableOpacity accessibilityRole="button" style={styles.primary} onPress={() => router.push('/build-workout')}>
+        <Text style={styles.primaryText}>START WORKOUT</Text>
+      </TouchableOpacity>
+      <TouchableOpacity accessibilityRole="button" style={styles.forgeLink} onPress={() => router.push('/forge')}>
+        <Text style={styles.forgeLinkText}>Want variety today? Open FORGE →</Text>
+      </TouchableOpacity>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
-  content: { padding: 18, gap: 16, paddingBottom: 40 },
-  hero: {
-    backgroundColor: theme.colors.surfaceRaised,
-    borderColor: theme.colors.border,
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 18,
-    gap: 14,
-    shadowColor: theme.colors.background,
-    shadowOpacity: 0.28,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 12 },
-    elevation: 6
-  },
-  heroTopline: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  brandRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  brandMark: { width: 52, height: 52 },
-  kicker: { color: theme.colors.purple, fontSize: 12, fontWeight: '800', textTransform: 'uppercase' },
-  heroBadge: {
-    color: theme.colors.ink,
-    backgroundColor: theme.colors.lime,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 999,
-    fontSize: 12,
-    fontWeight: '900'
-  },
-  title: { color: theme.colors.text, fontSize: 34, fontWeight: '900' },
-  subtitle: { color: theme.colors.textMuted, fontSize: 16 },
-  sectionPanel: {
-    backgroundColor: theme.colors.surface,
-    borderColor: theme.colors.borderMuted,
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 14,
-    gap: 10
-  },
-  section: { color: theme.colors.text, marginTop: 4, fontSize: 14, fontWeight: '800' },
-  row: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: {
-    backgroundColor: theme.colors.surfaceMuted,
-    borderColor: theme.colors.border,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 999,
-    minHeight: 40,
-    justifyContent: 'center'
-  },
-  chipActive: { backgroundColor: theme.colors.lime, borderColor: theme.colors.lime },
-  chipText: { color: theme.colors.textSoft, textTransform: 'capitalize', fontWeight: '700' },
-  chipTextActive: { color: theme.colors.ink, fontWeight: '900' },
-  generateButton: {
-    backgroundColor: theme.colors.lime,
-    borderRadius: 8,
-    paddingVertical: 16,
-    alignItems: 'center',
-    shadowColor: theme.colors.lime,
-    shadowOpacity: 0.24,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 5
-  },
-  generateText: { color: theme.colors.ink, fontWeight: '900', fontSize: 17 },
-  reviewPanel: {
-    backgroundColor: theme.colors.surface,
-    borderColor: theme.colors.borderMuted,
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 14,
-    gap: 10
-  },
-  reviewTopline: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
-  reviewBadge: {
-    color: theme.colors.ink,
-    backgroundColor: theme.colors.lime,
-    borderRadius: 999,
-    overflow: 'hidden',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    fontSize: 12,
-    fontWeight: '900'
-  },
-  reviewTitle: { color: theme.colors.text, fontWeight: '900', fontSize: 24, textTransform: 'capitalize' },
-  choiceSummary: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  choicePill: {
-    color: theme.colors.textSoft,
-    backgroundColor: theme.colors.surfaceMuted,
-    borderColor: theme.colors.border,
-    borderWidth: 1,
-    borderRadius: 999,
-    overflow: 'hidden',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    fontSize: 12,
-    fontWeight: '800',
-    textTransform: 'capitalize'
-  },
-  previewRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 14 },
-  previewLabel: { color: theme.colors.textSubtle, fontWeight: '700' },
-  previewValue: { color: theme.colors.textSoft, flex: 1, textAlign: 'right', fontWeight: '700' },
-  moveList: { gap: 8, borderTopColor: theme.colors.borderMuted, borderTopWidth: 1, paddingTop: 10 },
-  moveItem: { color: theme.colors.text, fontWeight: '800' },
-  note: { color: theme.colors.lime, fontStyle: 'italic', fontWeight: '700' },
-  reviewActions: { flexDirection: 'row', gap: 10, marginTop: 4 },
-  secondaryButton: {
-    flex: 1,
-    backgroundColor: theme.colors.surfaceMuted,
-    borderColor: theme.colors.border,
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingVertical: 13,
-    alignItems: 'center'
-  },
-  secondaryText: { color: theme.colors.textSoft, fontWeight: '900' }
+  content: { padding: 18, gap: 14, paddingBottom: 44, maxWidth: 720, width: '100%', alignSelf: 'center' },
+  center: { flex: 1, backgroundColor: theme.colors.background, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  muted: { color: theme.colors.textMuted },
+  hero: { backgroundColor: theme.colors.surfaceRaised, borderColor: theme.colors.border, borderWidth: 1, borderRadius: 10, padding: 20, gap: 12 },
+  mark: { width: 58, height: 58 },
+  kicker: { color: theme.colors.purple, fontSize: 12, fontWeight: '900', letterSpacing: 1.2 },
+  title: { color: theme.colors.text, fontSize: 32, fontWeight: '900', lineHeight: 37 },
+  body: { color: theme.colors.textMuted, fontSize: 15, lineHeight: 22 },
+  modeCard: { backgroundColor: theme.colors.surface, borderColor: theme.colors.borderMuted, borderWidth: 1, borderRadius: 10, padding: 18, gap: 11 },
+  modeBadge: { alignSelf: 'flex-start', color: theme.colors.ink, backgroundColor: theme.colors.lime, paddingHorizontal: 9, paddingVertical: 5, borderRadius: 999, overflow: 'hidden', fontSize: 11, fontWeight: '900' },
+  forgeBadge: { backgroundColor: theme.colors.purple, color: theme.colors.text },
+  cardTitle: { color: theme.colors.text, fontSize: 21, fontWeight: '900' },
+  primary: { backgroundColor: theme.colors.lime, borderRadius: 8, paddingVertical: 16, paddingHorizontal: 18, alignItems: 'center' },
+  primaryText: { color: theme.colors.ink, fontSize: 16, fontWeight: '900' },
+  secondary: { borderColor: theme.colors.border, borderWidth: 1, borderRadius: 8, paddingVertical: 14, alignItems: 'center' },
+  secondaryText: { color: theme.colors.text, fontWeight: '900' },
+  todayHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, paddingVertical: 8 },
+  buildBadge: { color: theme.colors.ink, backgroundColor: theme.colors.lime, borderRadius: 999, overflow: 'hidden', paddingHorizontal: 10, paddingVertical: 6, fontWeight: '900', fontSize: 12 },
+  exerciseCard: { backgroundColor: theme.colors.surface, borderColor: theme.colors.borderMuted, borderWidth: 1, borderRadius: 10, padding: 16, gap: 7 },
+  exerciseTopline: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
+  exerciseName: { color: theme.colors.text, fontSize: 18, fontWeight: '900', flex: 1 },
+  optional: { color: theme.colors.textSubtle, fontSize: 10, fontWeight: '900' },
+  prescription: { color: theme.colors.lime, fontSize: 21, fontWeight: '900' },
+  progression: { color: theme.colors.textSoft, fontWeight: '700' },
+  last: { color: theme.colors.textSubtle, fontSize: 13 },
+  forgeLink: { alignItems: 'center', paddingVertical: 10 },
+  forgeLinkText: { color: theme.colors.purple, fontWeight: '800' }
 });

@@ -3,6 +3,10 @@ import { getNextPushupState } from '@/lib/pushupProgression';
 import { BuildProfile, BuildWorkoutResult } from '@/types/build';
 
 export function advanceBuildProfile(profile: BuildProfile, result: BuildWorkoutResult): BuildProfile {
+  if (result.status === 'skipped') {
+    return { ...profile, updatedAt: result.completedAt };
+  }
+
   let next = {
     ...profile,
     updatedAt: result.completedAt,

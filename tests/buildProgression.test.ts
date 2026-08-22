@@ -203,7 +203,7 @@ test('workout prescriptions and results preserve planned versus actual context',
   assert.notStrictEqual(completedPullup.prescribedSets, completedPullup.completedSets);
 });
 
-test('advancing a BUILD result keeps source context and rotates the weekly template', () => {
+test('advancing a completed BUILD result keeps source context and rotates the weekly template', () => {
   const profile: BuildProfile = createInitialBuildProfile({
     pullupEnabled: false,
     pullupAssistanceLb: 0,
@@ -215,9 +215,34 @@ test('advancing a BUILD result keeps source context and rotates the weekly templ
   }, NOW);
   const result: BuildWorkoutResult = {
     id: 'result', workoutId: 'workout', source: 'BUILD', title: 'Strength A', templateId: 'strength-a', scheduledDay: 'Monday',
-    startedAt: NOW, completedAt: NOW, status: 'skipped', exercises: [], progressionSummary: []
+    startedAt: NOW, completedAt: NOW, status: 'completed', exercises: [], progressionSummary: []
   };
   const next = advanceBuildProfile(profile, result);
   assert.equal(result.source, 'BUILD');
   assert.equal(next.nextTemplateIndex, 1);
+});
+
+test('skipping an entire workout records the date without advancing the program', () => {
+  const profile = createInitialBuildProfile({
+    pullupEnabled: true, pullupAssistanceLb: 40, pullupCurrentReps: 10, assistanceIncrementLb: 5,
+    pushupEnabled: true, pushupVariation: 'knee', pushupCurrentMax: 20
+  }, '2026-01-01T00:00:00.000Z');
+  const result: BuildWorkoutResult = {
+    id: 'skip', workoutId: 'workout', source: 'BUILD', title: 'Strength A', templateId: 'strength-a', scheduledDay: 'Monday',
+    startedAt: NOW, completedAt: NOW, status: 'skipped', exercises: [], progressionSummary: []
+  };
+  const next = advanceBuildProfile(profile, result);
+  assert.equal(next.nextTemplateIndex, 0);
+  assert.deepEqual(next.pullup.targetReps, profile.pullup.targetReps);
+  assert.equal(next.updatedAt, NOW);
+});
+
+test('a long break does not trigger automatic regression or punishment', () => {
+  const profile = createInitialBuildProfile({
+    pullupEnabled: true, pullupAssistanceLb: 40, pullupCurrentReps: 10, assistanceIncrementLb: 5,
+    pushupEnabled: true, pushupVariation: 'knee', pushupCurrentMax: 20
+  }, '2025-01-01T00:00:00.000Z');
+  const workout = createBuildWorkout(profile, '2026-08-22T00:00:00.000Z');
+  assert.deepEqual(workout.exercises.find((item) => item.kind === 'pull-up')?.sets.map((set) => set.targetReps), profile.pullup.targetReps);
+  assert.equal(workout.templateId, 'strength-a');
 });

@@ -78,6 +78,16 @@ export type ExerciseTag =
 
 export type ExerciseType = 'time' | 'rep';
 
+export type EquipmentId =
+  | 'bodyweight'
+  | 'pull-up-bar'
+  | 'functional-trainer'
+  | 'cable'
+  | 'dumbbells'
+  | 'kettlebell'
+  | 'medicine-ball'
+  | 'step-platform';
+
 export interface Exercise {
   id: string;
   name: string;
@@ -86,6 +96,7 @@ export interface Exercise {
   focus: Focus[];
   cue: string;
   durationType?: ExerciseType;
+  equipment?: EquipmentId[];
 }
 
 export interface GenerateWorkoutInput {
@@ -96,6 +107,7 @@ export interface GenerateWorkoutInput {
 }
 
 export interface WorkoutPlan {
+  source: 'FORGE';
   title: string;
   createdAt: string;
   input: GenerateWorkoutInput;

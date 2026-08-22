@@ -404,6 +404,60 @@ export const EXERCISES: Exercise[] = [
     tags: ['posterior', 'balance', 'legs'],
     focus: ['legs + power', 'core + back', 'recovery'],
     cue: 'Reach hips back and stay long from head to heel.'
+  },
+  {
+    id: 'bodyweight-standard-push-up',
+    name: 'Standard Push-Up',
+    attachment: 'handles',
+    equipment: ['bodyweight'],
+    tags: ['push', 'core'],
+    focus: ['full body', 'core + back', 'endurance'],
+    cue: 'Keep a rigid body line and lower with control through a full, comfortable range.'
+  },
+  {
+    id: 'bodyweight-knee-push-up',
+    name: 'Knee Push-Up',
+    attachment: 'handles',
+    equipment: ['bodyweight'],
+    tags: ['push', 'core'],
+    focus: ['full body', 'core + back', 'recovery'],
+    cue: 'Keep hips open and body long from knees through shoulders.'
+  },
+  {
+    id: 'dumbbell-squat-press',
+    name: 'Squat to Overhead Press',
+    attachment: 'dumbbells',
+    equipment: ['dumbbells'],
+    tags: ['legs', 'push', 'full body'],
+    focus: ['full body', 'legs + power', 'endurance'],
+    cue: 'Stand tall out of the squat before finishing the press.'
+  },
+  {
+    id: 'dumbbell-rdl',
+    name: 'Dumbbell Romanian Deadlift',
+    attachment: 'dumbbells',
+    equipment: ['dumbbells'],
+    tags: ['posterior', 'legs'],
+    focus: ['legs + power', 'full body', 'core + back'],
+    cue: 'Keep a long spine and push the hips back.'
+  },
+  {
+    id: 'step-up',
+    name: 'Step-Up',
+    attachment: 'dumbbells',
+    equipment: ['dumbbells', 'step-platform'],
+    tags: ['legs', 'balance', 'athletic'],
+    focus: ['legs + power', 'full body', 'recovery'],
+    cue: 'Drive through the whole lead foot and control the way down.'
+  },
+  {
+    id: 'bodyweight-dead-bug',
+    name: 'Dead Bug',
+    attachment: 'handles',
+    equipment: ['bodyweight'],
+    tags: ['core', 'stability', 'recovery'],
+    focus: ['core + back', 'recovery', 'full body'],
+    cue: 'Move slowly without letting the ribs flare.'
   }
 ];
 
