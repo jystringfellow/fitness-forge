@@ -5,7 +5,6 @@ import {
   Energy,
   Exercise,
   ExerciseTag,
-  ExerciseType,
   Focus,
   GenerateWorkoutInput,
   TimeOption,
@@ -213,14 +212,30 @@ function formatWorkoutFormat(format: WorkoutFormat): string {
   return `${format[0].toUpperCase()}${format.slice(1)} intervals`;
 }
 
-function pickCardioOptions(focus: Focus, time: TimeOption, energy: Energy): string[] {
-  const options = shuffle(CARDIO_LIBRARY[focus] ?? CARDIO_LIBRARY['full body']);
-  const baseCount = time >= 30 ? 3 : time >= 20 ? 2 : 1;
-  const energyBonus = energy === 'high' && time >= 25 ? 1 : 0;
-  const energyReduction = energy === 'low' && time <= 20 ? 1 : 0;
-  const count = Math.max(1, Math.min(options.length, baseCount + energyBonus - energyReduction));
+function pickCardioOptions(focus: Focus, targetDurationSecs: number): string[] {
+  const focusOptions = CARDIO_LIBRARY[focus] ?? CARDIO_LIBRARY['full body'];
+  const timedOptions = focusOptions.filter((option) => {
+    const sequence = parseCardioSequence(option);
+    return sequence.segments.every((segment) => segment.durationSecs > 0);
+  });
+  const fallbackOptions = CARDIO_LIBRARY['full body'].filter((option) => {
+    const sequence = parseCardioSequence(option);
+    return sequence.segments.every((segment) => segment.durationSecs > 0);
+  });
+  const options = shuffle(timedOptions.length ? timedOptions : fallbackOptions);
+  const picks: string[] = [];
+  let selectedDurationSecs = 0;
 
-  return options.slice(0, count);
+  for (const option of options) {
+    picks.push(option);
+    selectedDurationSecs += getCardioSequenceDurationSecs(parseCardioSequence(option));
+
+    if (selectedDurationSecs >= targetDurationSecs) {
+      break;
+    }
+  }
+
+  return picks;
 }
 
 function pickFinisher(energy: Energy, focus: Focus): string {
@@ -340,6 +355,11 @@ interface ParsedCardioSequence {
   segments: ParsedCardioSegment[];
 }
 
+function getCardioSequenceDurationSecs(sequence: ParsedCardioSequence): number {
+  const roundDurationSecs = sequence.segments.reduce((sum, segment) => sum + segment.durationSecs, 0);
+  return roundDurationSecs * sequence.totalRounds;
+}
+
 function isRestLikeExercise(exercise: string): boolean {
   return /\b(easy|walk|rest|reset|recovery|mobility|nasal-breath)\b/i.test(exercise);
 }
@@ -408,10 +428,13 @@ function parseCardioSequence(text: string): ParsedCardioSequence {
   return { totalRounds, segments };
 }
 
-function buildCardioIntervalSteps(cardioOptions: string[]): WorkoutIntervalStep[] {
+function buildCardioIntervalSteps(
+  cardioOptions: string[],
+  targetDurationSecs: number
+): WorkoutIntervalStep[] {
   const sequences = cardioOptions.map(parseCardioSequence);
   const maxRounds = Math.max(...sequences.map((sequence) => sequence.totalRounds), 0);
-  const intervalSteps: WorkoutIntervalStep[] = [];
+  const candidateSteps: WorkoutIntervalStep[] = [];
 
   for (let round = 1; round <= maxRounds; round += 1) {
     sequences.forEach((sequence) => {
@@ -424,7 +447,7 @@ function buildCardioIntervalSteps(cardioOptions: string[]): WorkoutIntervalStep[
           ? formatRepExercise(segment.reps, segment.exercise, round, sequence.totalRounds)
           : formatTimedExercise(segment.durationSecs, segment.exercise, round, sequence.totalRounds);
 
-        intervalSteps.push({
+        candidateSteps.push({
           text: label,
           durationSecs: segment.durationSecs,
           isRest: segment.isRest,
@@ -438,7 +461,99 @@ function buildCardioIntervalSteps(cardioOptions: string[]): WorkoutIntervalStep[
     });
   }
 
+  const intervalSteps: WorkoutIntervalStep[] = [];
+  let remainingDurationSecs = targetDurationSecs;
+
+  for (const step of candidateSteps) {
+    if (remainingDurationSecs <= 0) {
+      break;
+    }
+
+    if (step.durationSecs <= 0) {
+      continue;
+    }
+
+    const durationSecs = Math.min(step.durationSecs, remainingDurationSecs);
+    intervalSteps.push({
+      ...step,
+      durationSecs,
+      text:
+        durationSecs === step.durationSecs || !step.exerciseName || !step.round || !step.totalRounds
+          ? step.text
+          : formatTimedExercise(durationSecs, step.exerciseName, step.round, step.totalRounds)
+    });
+    remainingDurationSecs -= durationSecs;
+  }
+
   return intervalSteps;
+}
+
+function getMainBlockDurationSecs(
+  roundIntervals: NonNullable<WorkoutPlan['mainBlock']['roundIntervals']>,
+  exerciseCount: number
+): number {
+  return roundIntervals.reduce((sum, interval, index) => {
+    const restCount = index === roundIntervals.length - 1 ? Math.max(0, exerciseCount - 1) : exerciseCount;
+    return sum + interval.workSeconds * exerciseCount + interval.restSeconds * restCount;
+  }, 0);
+}
+
+function fitRoundIntervalsToBudget(
+  roundIntervals: NonNullable<WorkoutPlan['mainBlock']['roundIntervals']>,
+  exerciseCount: number,
+  targetDurationSecs: number
+): NonNullable<WorkoutPlan['mainBlock']['roundIntervals']> {
+  const currentDurationSecs = getMainBlockDurationSecs(roundIntervals, exerciseCount);
+  if (!currentDurationSecs || !exerciseCount) {
+    return roundIntervals;
+  }
+
+  const scale = targetDurationSecs / currentDurationSecs;
+  const fittedIntervals = roundIntervals.map((interval) => ({
+    ...interval,
+    workSeconds: Math.max(10, Math.round(interval.workSeconds * scale)),
+    restSeconds: Math.max(5, Math.round(interval.restSeconds * scale))
+  }));
+  const lastInterval = fittedIntervals[fittedIntervals.length - 1];
+  const finalRoundRestCount = Math.max(0, exerciseCount - 1);
+
+  if (lastInterval && finalRoundRestCount) {
+    const restAdjustment = Math.round(
+      (targetDurationSecs - getMainBlockDurationSecs(fittedIntervals, exerciseCount)) / finalRoundRestCount
+    );
+    lastInterval.restSeconds = Math.max(1, lastInterval.restSeconds + restAdjustment);
+  }
+
+  if (lastInterval) {
+    const workAdjustment = Math.round(
+      (targetDurationSecs - getMainBlockDurationSecs(fittedIntervals, exerciseCount)) / exerciseCount
+    );
+    lastInterval.workSeconds = Math.max(10, lastInterval.workSeconds + workAdjustment);
+  }
+
+  return fittedIntervals;
+}
+
+function buildCardioBlock(
+  targetDurationMins: number,
+  intervalSteps: WorkoutIntervalStep[]
+): WorkoutBlockItem[] {
+  const exerciseNames = [
+    ...new Set(intervalSteps.map((step) => step.exerciseName).filter((name): name is string => Boolean(name)))
+  ];
+
+  return [
+    {
+      text: `${targetDurationMins} min cardio/plyo`,
+      type: 'time',
+      value: targetDurationMins * 60
+    },
+    {
+      text: exerciseNames.join(' + '),
+      type: 'time',
+      value: targetDurationMins * 60
+    }
+  ];
 }
 
 function buildOptionalFinisherSteps(note?: string): WorkoutIntervalStep[] {
@@ -473,14 +588,14 @@ function buildOptionalFinisherSteps(note?: string): WorkoutIntervalStep[] {
 }
 
 function buildIntervalSteps(
-  cardioOptions: string[],
+  cardioSteps: WorkoutIntervalStep[],
   mainBlock: WorkoutPlan['mainBlock'],
   note?: string
 ): WorkoutIntervalStep[] {
   const intervalSteps: WorkoutIntervalStep[] = [];
   const finisherSteps = buildOptionalFinisherSteps(note);
 
-  intervalSteps.push(...buildCardioIntervalSteps(cardioOptions));
+  intervalSteps.push(...cardioSteps);
   intervalSteps.push({
     text: `Ready for ${mainBlock.format ?? 'the main block'}?`,
     durationSecs: 0,
@@ -547,59 +662,27 @@ export function generateWorkoutPlan(
   const split = TIME_SPLIT[input.time];
   const intervals = ENERGY_TO_WORK_REST[input.energy];
   const workoutFormat = pickWorkoutFormat(input.energy, input.focus);
-  const roundIntervals = buildRoundIntervals(intervals, workoutFormat);
   const attachment = pickAttachment(input.attachment, input.focus, input.energy);
   const mainExercises = pickMainExercises(attachment, input.focus);
-  const cardioOptions = pickCardioOptions(input.focus, input.time, input.energy);
-
-  const parseCardioOption = (text: string): WorkoutBlockItem => {
-    const isRep = text.match(/^\d+\s+(?!min\b)[a-z]/i);
-
-    if (isRep) {
-      const repMatch = text.match(/(\d+)\s+([a-z]+)/i);
-      if (repMatch) {
-        return {
-          text,
-          type: 'rep',
-          value: parseInt(repMatch[1], 10)
-        };
-      }
-    }
-
-    let totalTime = 0;
-    const timeParts = text.match(/(\d+)s/g);
-    if (timeParts) {
-      totalTime = timeParts.reduce((sum, part) => sum + parseInt(part.match(/(\d+)s/)?.[1] || '0', 10), 0);
-    }
-
-    const repeatMatch = text.match(/x\s*(\d+)/i);
-    const repeats = repeatMatch ? parseInt(repeatMatch[1], 10) : 1;
-    const totalDuration = totalTime * repeats;
-
-    return {
-      text,
-      type: 'time',
-      value: totalDuration
-    };
-  };
-
-  const cardioBlock: WorkoutBlockItem[] = [];
-  cardioBlock.push({ text: `${split.cardio} min cardio/plyo`, type: 'time', value: split.cardio * 60 });
-
-  cardioOptions.forEach((option) => {
-    cardioBlock.push(parseCardioOption(option));
-  });
+  const roundIntervals = fitRoundIntervalsToBudget(
+    buildRoundIntervals(intervals, workoutFormat),
+    mainExercises.length,
+    split.main * 60
+  );
+  const cardioOptions = pickCardioOptions(input.focus, split.cardio * 60);
+  const cardioIntervalSteps = buildCardioIntervalSteps(cardioOptions, split.cardio * 60);
+  const cardioBlock = buildCardioBlock(split.cardio, cardioIntervalSteps);
 
   const mainBlock: WorkoutPlan['mainBlock'] = {
     rounds: intervals.rounds,
-    workSeconds: intervals.work,
-    restSeconds: intervals.rest,
+    workSeconds: roundIntervals[0]?.workSeconds ?? intervals.work,
+    restSeconds: roundIntervals[0]?.restSeconds ?? intervals.rest,
     format: formatWorkoutFormat(workoutFormat),
     roundIntervals,
     exercises: mainExercises
   };
   const note = pickFinisher(input.energy, input.focus);
-  const intervalSteps = includeIntervalSteps ? buildIntervalSteps(cardioOptions, mainBlock, note) : [];
+  const intervalSteps = includeIntervalSteps ? buildIntervalSteps(cardioIntervalSteps, mainBlock, note) : [];
 
   return {
     title: `${input.time}-min ${input.focus} forge`,

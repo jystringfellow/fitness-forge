@@ -1,4 +1,4 @@
-export const brandIcon = require('../../assets/icon.png');
+export const brandIcon = require('../../assets/brand-mark.png');
 
 export const theme = {
   colors: {

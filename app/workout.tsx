@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Audio } from 'expo-av';
+import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 import * as Speech from 'expo-speech';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -90,10 +90,10 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
   const [currentStepIndex, setCurrentStepIndex] = useState<number>(0);
   const [repCount, setRepCount] = useState<number>(0);
   const [timeRemaining, setTimeRemaining] = useState<number>(() => steps[0]?.durationSecs ?? 0);
+  const transitionPlayer = useAudioPlayer(transitionChime);
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const spokenWarningRef = useRef<string | null>(null);
-  const transitionSoundRef = useRef<Audio.Sound | null>(null);
   const currentStep = steps[currentStepIndex] ?? null;
   const nextStep = steps[currentStepIndex + 1] ?? null;
   const progressPercent = steps.length ? Math.min(100, Math.round((currentStepIndex / steps.length) * 100)) : 0;
@@ -104,14 +104,9 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
       : styles.workTone;
 
   const playTransitionSound = () => {
-    const transitionSound = transitionSoundRef.current;
-
-    if (!transitionSound) {
-      return;
-    }
-
-    transitionSound
-      .replayAsync()
+    transitionPlayer
+      .seekTo(0)
+      .then(() => transitionPlayer.play())
       .catch(() => {
         // The timer should keep moving even if the platform refuses audio playback.
       });
@@ -151,34 +146,13 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
   }, [plan.createdAt]);
 
   useEffect(() => {
-    let mounted = true;
-
-    Audio.setAudioModeAsync({
-      playsInSilentModeIOS: true
+    transitionPlayer.volume = 0.75;
+    setAudioModeAsync({
+      playsInSilentMode: true
     }).catch(() => {
       // The sound still works on most targets when audio mode setup is unavailable.
     });
-
-    Audio.Sound.createAsync(transitionChime, { volume: 0.75 })
-      .then(({ sound }) => {
-        if (mounted) {
-          transitionSoundRef.current = sound;
-          return;
-        }
-
-        sound.unloadAsync();
-      })
-      .catch(() => {
-        transitionSoundRef.current = null;
-      });
-
-    return () => {
-      mounted = false;
-      const transitionSound = transitionSoundRef.current;
-      transitionSoundRef.current = null;
-      transitionSound?.unloadAsync();
-    };
-  }, []);
+  }, [transitionPlayer]);
 
   useEffect(() => {
     if (intervalRef.current) {
