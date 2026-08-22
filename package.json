@@ -43,6 +43,7 @@
     "react-native-web": "~0.21.2"
   },
   "devDependencies": {
+    "@types/node": "^20.19.43",
     "@types/react": "~19.1.17",
     "expo-doctor": "^1.20.2",
     "tsx": "^4.23.12",
