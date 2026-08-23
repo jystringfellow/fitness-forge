@@ -94,6 +94,18 @@ Cloud storage uses two prefixed tables:
 
 On the first sign-in to an empty cloud account, existing anonymous device data is uploaded. If the account already has cloud state, that state wins on a device that has never linked it. Workout histories are merged by stable ID. To prevent cross-account leakage or local data loss, cloud sync refuses to relink an installation already owned by a different user; multi-account device switching is not part of this first version. Completed sessions merge safely across devices, while simultaneous offline edits to the BUILD profile currently use last-successful-sync behavior rather than field-level conflict resolution.
 
+## Private iOS distribution
+
+The iOS app uses bundle identifier `com.jystringfellow.fitnessforge` and is linked to the `@jystringfellow/fitness-forge` EAS project. `eas.json` defines a production TestFlight build using the EAS `production` environment and automatic build-number increments.
+
+Before building, apply the Supabase migration and upload `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` to the EAS production environment. Then build and submit with:
+
+```bash
+pnpm dlx eas-cli@latest build --platform ios --profile production --auto-submit
+```
+
+Apple and Expo authentication happens interactively. TestFlight installations have a different local storage sandbox from Expo Go; back up existing Expo Go data first, then sign into the same Fitness Forge account in the TestFlight build to restore it.
+
 Useful checks:
 
 ```bash
