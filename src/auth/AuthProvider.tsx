@@ -1,6 +1,8 @@
 import { Session } from '@supabase/supabase-js';
 import { PropsWithChildren, createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
+import * as Linking from 'expo-linking';
+import { AUTH_CALLBACK_URL, parseAuthCallbackUrl } from '@/lib/authDeepLink';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import { synchronizeCloudData } from '@/storage/cloudSync';
 import { registerCloudSyncTrigger } from '@/storage/cloudMetadata';
@@ -79,8 +81,32 @@ export function AuthProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     if (!supabase) return;
     let mounted = true;
+    const client = supabase;
 
-    supabase.auth.getSession().then(async ({ data, error }) => {
+    const handleAuthUrl = async (url: string) => {
+      const callback = parseAuthCallbackUrl(url);
+      if (callback.type === 'error') {
+        setCloudError(callback.message);
+        setCloudStatus('error');
+      } else if (callback.type === 'session') {
+        const { error } = await client.auth.setSession({
+          access_token: callback.accessToken,
+          refresh_token: callback.refreshToken
+        });
+        if (error) {
+          setCloudError(error.message);
+          setCloudStatus('error');
+        }
+      } else if (callback.type === 'code') {
+        const { error } = await client.auth.exchangeCodeForSession(callback.code);
+        if (error) {
+          setCloudError(error.message);
+          setCloudStatus('error');
+        }
+      }
+    };
+
+    client.auth.getSession().then(async ({ data, error }) => {
       if (!mounted) return;
       if (error) {
         setCloudError(error.message);
@@ -95,7 +121,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       if (data.session) void syncNow();
     });
 
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const { data: authListener } = client.auth.onAuthStateChange((_event, nextSession) => {
       sessionRef.current = nextSession;
       setSession(nextSession);
       if (nextSession) {
@@ -106,10 +132,13 @@ export function AuthProvider({ children }: PropsWithChildren) {
         setWorkoutCount(null);
       }
     });
+    void Linking.getInitialURL().then((url) => { if (url) void handleAuthUrl(url); });
+    const linkingSubscription = Linking.addEventListener('url', ({ url }) => { void handleAuthUrl(url); });
 
     return () => {
       mounted = false;
       authListener.subscription.unsubscribe();
+      linkingSubscription.remove();
     };
   }, [syncNow]);
 
@@ -144,7 +173,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   const signUp = async (email: string, password: string) => {
     if (!supabase) throw new Error('Add the Supabase environment values before creating an account.');
-    const { data, error } = await supabase.auth.signUp({ email: email.trim(), password });
+    const { data, error } = await supabase.auth.signUp({
+      email: email.trim(),
+      password,
+      options: { emailRedirectTo: AUTH_CALLBACK_URL }
+    });
     if (error) throw error;
     return data.session ? 'signed-in' as const : 'confirmation-required' as const;
   };

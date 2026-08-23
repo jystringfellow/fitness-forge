@@ -18,7 +18,7 @@ export default function SettingsScreen() {
         await auth.signIn(email, password);
       } else {
         const result = await auth.signUp(email, password);
-        if (result === 'confirmation-required') setMessage('Check your email to confirm the account, then sign in here.');
+        if (result === 'confirmation-required') setMessage('Check your email to confirm the account. The link will return you to Fitness Forge.');
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Authentication failed.');

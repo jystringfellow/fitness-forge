@@ -83,6 +83,8 @@ The app works without Supabase. When configured, every workout still saves to As
 4. Restart Expo with `pnpm exec expo start --clear`.
 5. Open Settings, create an account or sign in, and use **Back Up Now** to verify the connection.
 
+In Supabase Authentication > URL Configuration, set the Site URL to `fitnessforge://auth/callback` and add `fitnessforge://**` to Additional Redirect URLs. Confirmation links then open the installed iOS app, which exchanges the callback credentials for a persisted session. Expo Go cannot claim the custom `fitnessforge` scheme; for Expo Go-only signup testing, temporarily disable email confirmation or confirm the email and return to the app to sign in manually.
+
 Email/password authentication is the initial login method. Supabase projects commonly require new users to confirm their email; that behavior is controlled in the project’s Auth settings.
 
 The publishable key is intentionally available to the Expo client. Never add a secret or service-role key to the app. Cloud access is protected by grants and Row Level Security policies requiring `auth.uid() = user_id` on both Fitness Forge tables.
