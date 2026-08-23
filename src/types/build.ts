@@ -64,8 +64,16 @@ export interface AccessoryState {
   successfulSessions: number;
 }
 
+export interface BuildRestPreferences {
+  pullupSeconds: number;
+  pushupMode: 'custom' | 'program';
+  pushupSeconds: number;
+  strengthSeconds: number;
+  conditioningSeconds: number;
+}
+
 export interface BuildProfile {
-  schemaVersion: 2;
+  schemaVersion: 3;
   active: boolean;
   createdAt: string;
   updatedAt: string;
@@ -73,6 +81,7 @@ export interface BuildProfile {
   pullup: PullupProgressionState;
   pushup: PushupProgressionState;
   accessories: Record<string, AccessoryState>;
+  rest: BuildRestPreferences;
 }
 
 export interface PrescribedSet {

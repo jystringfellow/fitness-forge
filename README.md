@@ -17,7 +17,7 @@ FORGE answers “Give me a good workout today.” It preserves the existing rand
 
 Both sources write to one workout history while retaining source-specific context. BUILD records variation, assistance/load, program position, and planned-versus-actual performance. FORGE records its generated session summary.
 
-BUILD prescriptions also include exercise-specific recovery guidance. Completing a non-final set starts a countdown that can be paused, extended, or skipped. Push-up rest comes directly from the selected program day and ranges from 45 to 120 seconds; longer rest is always allowed.
+BUILD prescriptions also include configurable recovery guidance. Dense defaults use 60 seconds for pull-ups, push-ups, and strength accessories, plus 45 seconds for conditioning and core. BUILD settings offer short presets, and push-ups can optionally return to the original table’s 45–120-second rest. Completing a non-final set starts a countdown that can be paused, extended, or skipped; longer rest is always allowed.
 
 ## Architecture
 

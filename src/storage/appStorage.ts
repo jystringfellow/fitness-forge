@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { DEFAULT_BUILD_REST_PREFERENCES } from '@/data/buildProgram';
 import { getInitialPushupProgramWeek, selectPushupBracket } from '@/data/pushupProgram';
 import { BuildProfile, BuildWorkoutPrescription, WorkoutHistoryEntry } from '@/types/build';
 import { WorkoutPlan } from '@/types/workout';
@@ -25,22 +26,20 @@ export function migrateBuildProfile(value: unknown): BuildProfile | null {
   const profile = value as Record<string, unknown>;
   const pushup = profile.pushup as Record<string, unknown> | undefined;
   if (!pushup) return null;
-  if (profile.schemaVersion === 2 && typeof pushup.programWeek === 'number') return value as BuildProfile;
+  if (profile.schemaVersion === 3 && typeof pushup.programWeek === 'number' && profile.rest) return value as BuildProfile;
 
-  const sessionIndex = typeof pushup.programSessionIndex === 'number' ? pushup.programSessionIndex : 0;
-  const assessmentDue = pushup.assessmentDue === true;
-  const baselineMax = typeof pushup.baselineMax === 'number' ? pushup.baselineMax : 1;
-  const programWeek = assessmentDue
-    ? 2
-    : sessionIndex === 0
-      ? getInitialPushupProgramWeek(baselineMax)
-      : Math.min(2, Math.floor(sessionIndex / 3) + 1);
-  const programDay = assessmentDue ? 3 : (sessionIndex % 3) + 1;
-
-  return {
-    ...(value as Omit<BuildProfile, 'schemaVersion' | 'pushup'>),
-    schemaVersion: 2,
-    pushup: {
+  let migratedPushup = pushup;
+  if (typeof pushup.programWeek !== 'number') {
+    const sessionIndex = typeof pushup.programSessionIndex === 'number' ? pushup.programSessionIndex : 0;
+    const assessmentDue = pushup.assessmentDue === true;
+    const baselineMax = typeof pushup.baselineMax === 'number' ? pushup.baselineMax : 1;
+    const programWeek = assessmentDue
+      ? 2
+      : sessionIndex === 0
+        ? getInitialPushupProgramWeek(baselineMax)
+        : Math.min(2, Math.floor(sessionIndex / 3) + 1);
+    const programDay = assessmentDue ? 3 : (sessionIndex % 3) + 1;
+    migratedPushup = {
       ...pushup,
       baselineMax,
       programWeek,
@@ -48,6 +47,16 @@ export function migrateBuildProfile(value: unknown): BuildProfile | null {
       programBracket: selectPushupBracket(programWeek, baselineMax).id,
       assessmentReason: assessmentDue ? 'phase' : undefined,
       nextProgramWeekAfterAssessment: assessmentDue ? 3 : undefined
+    };
+  }
+
+  return {
+    ...(value as Omit<BuildProfile, 'schemaVersion' | 'pushup' | 'rest'>),
+    schemaVersion: 3,
+    pushup: migratedPushup as unknown as BuildProfile['pushup'],
+    rest: {
+      ...DEFAULT_BUILD_REST_PREFERENCES,
+      ...(profile.rest as Partial<BuildProfile['rest']> | undefined)
     }
   } as BuildProfile;
 }
@@ -55,7 +64,7 @@ export function migrateBuildProfile(value: unknown): BuildProfile | null {
 export async function loadBuildProfile(): Promise<BuildProfile | null> {
   const stored = await readJson<unknown>(KEYS.profile);
   const migrated = migrateBuildProfile(stored);
-  if (migrated && (stored as { schemaVersion?: number } | null)?.schemaVersion !== 2) {
+  if (migrated && (stored as { schemaVersion?: number } | null)?.schemaVersion !== 3) {
     await Promise.all([
       saveBuildProfile(migrated),
       AsyncStorage.removeItem(KEYS.activeBuildWorkout)

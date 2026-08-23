@@ -41,9 +41,29 @@ test('schema v1 BUILD profiles migrate into the table-driven week and phase mode
     }
   };
   const migrated = migrateBuildProfile(legacy);
-  assert.equal(migrated?.schemaVersion, 2);
+  assert.equal(migrated?.schemaVersion, 3);
   assert.equal(migrated?.pushup.programWeek, 2);
   assert.equal(migrated?.pushup.programDay, 3);
   assert.equal(migrated?.pushup.programBracket, '11-20');
   assert.equal(migrated?.pushup.nextProgramWeekAfterAssessment, 3);
+  assert.deepEqual(migrated?.rest, {
+    pullupSeconds: 60,
+    pushupMode: 'custom',
+    pushupSeconds: 60,
+    strengthSeconds: 60,
+    conditioningSeconds: 45
+  });
+});
+
+test('schema v2 profiles retain progression while gaining dense rest defaults', () => {
+  const current = createInitialBuildProfile({
+    pullupEnabled: true, pullupAssistanceLb: 40, pullupCurrentReps: 10, assistanceIncrementLb: 5,
+    pushupEnabled: true, pushupVariation: 'knee', pushupCurrentMax: 18
+  }, '2026-01-01T00:00:00.000Z');
+  const { rest: _rest, ...withoutRest } = current;
+  const migrated = migrateBuildProfile({ ...withoutRest, schemaVersion: 2 });
+  assert.equal(migrated?.schemaVersion, 3);
+  assert.equal(migrated?.pushup.programWeek, current.pushup.programWeek);
+  assert.equal(migrated?.rest.pullupSeconds, 60);
+  assert.equal(migrated?.rest.conditioningSeconds, 45);
 });

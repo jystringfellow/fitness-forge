@@ -313,16 +313,38 @@ test('BUILD prescriptions include exercise-specific rest intervals', () => {
   const strengthA = createBuildWorkout(profile, NOW);
   assert.deepEqual(
     Object.fromEntries(strengthA.exercises.map((item) => [item.exerciseId, item.restSecondsBetweenSets])),
-    { 'assisted-pull-up': 120, 'knee-push-up': 60, 'dumbbell-single-leg-rdl': 90, 'kettlebell-swing': 60 }
+    { 'assisted-pull-up': 60, 'knee-push-up': 60, 'dumbbell-single-leg-rdl': 60, 'kettlebell-swing': 45 }
   );
 
   const strengthB = createBuildWorkout({ ...profile, nextTemplateIndex: 1 }, NOW);
-  assert.equal(strengthB.exercises.find((item) => item.exerciseId === 'dumbbell-rdl')?.restSecondsBetweenSets, 120);
-  assert.equal(strengthB.exercises.find((item) => item.exerciseId === 'dumbbell-squat-press')?.restSecondsBetweenSets, 90);
+  assert.equal(strengthB.exercises.find((item) => item.exerciseId === 'dumbbell-rdl')?.restSecondsBetweenSets, 60);
+  assert.equal(strengthB.exercises.find((item) => item.exerciseId === 'dumbbell-squat-press')?.restSecondsBetweenSets, 60);
 
   const assessment = createBuildWorkout({
     ...profile,
     pushup: { ...profile.pushup, assessmentDue: true, assessmentVariation: 'knee' }
   }, NOW);
   assert.equal(assessment.exercises.find((item) => item.kind === 'assessment')?.restSecondsBetweenSets, 0);
+});
+
+test('rest preferences override every BUILD category while program push-up rest remains available', () => {
+  const profile = createInitialBuildProfile({
+    pullupEnabled: true, pullupAssistanceLb: 40, pullupCurrentReps: 10, assistanceIncrementLb: 5,
+    pushupEnabled: true, pushupVariation: 'knee', pushupCurrentMax: 20
+  }, NOW);
+  const dense = createBuildWorkout({
+    ...profile,
+    rest: { pullupSeconds: 45, pushupMode: 'custom', pushupSeconds: 45, strengthSeconds: 45, conditioningSeconds: 30 }
+  }, NOW);
+  assert.deepEqual(
+    Object.fromEntries(dense.exercises.map((item) => [item.exerciseId, item.restSecondsBetweenSets])),
+    { 'assisted-pull-up': 45, 'knee-push-up': 45, 'dumbbell-single-leg-rdl': 45, 'kettlebell-swing': 30 }
+  );
+
+  const tableRest = createBuildWorkout({
+    ...profile,
+    pushup: { ...profile.pushup, programWeek: 2, programDay: 3, programBracket: '11-20' },
+    rest: { ...profile.rest, pushupMode: 'program' }
+  }, NOW);
+  assert.equal(tableRest.exercises.find((item) => item.kind === 'push-up')?.restSecondsBetweenSets, 120);
 });
