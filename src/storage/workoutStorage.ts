@@ -1,7 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { markCloudDataDirty } from '@/storage/cloudMetadata';
 import { WorkoutPlan } from '@/types/workout';
 
-const CURRENT_WORKOUT_KEY = 'fitness_forge/current_workout';
+export const CURRENT_WORKOUT_KEY = 'fitness_forge/current_workout';
 
 export async function loadCurrentWorkout(): Promise<WorkoutPlan | null> {
   const raw = await AsyncStorage.getItem(CURRENT_WORKOUT_KEY);
@@ -10,4 +11,5 @@ export async function loadCurrentWorkout(): Promise<WorkoutPlan | null> {
 
 export async function setCurrentWorkout(plan: WorkoutPlan): Promise<void> {
   await AsyncStorage.setItem(CURRENT_WORKOUT_KEY, JSON.stringify(plan));
+  await markCloudDataDirty();
 }

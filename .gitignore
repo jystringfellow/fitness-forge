@@ -17,6 +17,11 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Local environment values
+.env
+.env.local
+.env.*.local
+
 # macOS
 .DS_Store
 .aider*

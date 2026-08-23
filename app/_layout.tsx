@@ -1,10 +1,11 @@
 import { Tabs } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { AuthProvider } from '@/auth/AuthProvider';
 import { theme } from '@/theme/brand';
 
 export default function RootLayout() {
   return (
-    <>
+    <AuthProvider>
       <StatusBar style="light" backgroundColor={theme.colors.background} />
       <Tabs
         screenOptions={{
@@ -30,10 +31,11 @@ export default function RootLayout() {
         <Tabs.Screen name="forge" options={{ title: 'Forge' }} />
         <Tabs.Screen name="progress" options={{ title: 'Progress' }} />
         <Tabs.Screen name="history" options={{ title: 'History' }} />
+        <Tabs.Screen name="settings" options={{ title: 'Settings' }} />
         <Tabs.Screen name="workout" options={{ href: null, title: 'FORGE Workout' }} />
         <Tabs.Screen name="build-workout" options={{ href: null, title: 'BUILD Workout' }} />
         <Tabs.Screen name="library" options={{ href: null, title: 'Library' }} />
       </Tabs>
-    </>
+    </AuthProvider>
   );
 }
