@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { AUTH_CALLBACK_URL, parseAuthCallbackUrl } from '@/lib/authDeepLink';
+import { AUTH_CALLBACK_URL, getAuthCallbackUrl, parseAuthCallbackUrl } from '@/lib/authDeepLink';
+
+test('development builds use their own callback scheme beside TestFlight', () => {
+  assert.equal(getAuthCallbackUrl('fitnessforge-dev'), 'fitnessforge-dev://auth/callback');
+  assert.equal(getAuthCallbackUrl(''), 'fitnessforge://auth/callback');
+});
 
 test('mobile auth callback extracts an implicit session without logging tokens', () => {
   assert.deepEqual(

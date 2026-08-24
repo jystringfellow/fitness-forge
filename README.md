@@ -17,7 +17,7 @@ FORGE answers “Give me a good workout today.” It preserves the existing rand
 
 Both sources write to one workout history while retaining source-specific context. BUILD records variation, assistance/load, program position, and planned-versus-actual performance. FORGE records its generated session summary.
 
-BUILD prescriptions also include configurable recovery guidance. Dense defaults use 60 seconds for pull-ups, push-ups, and strength accessories, plus 45 seconds for conditioning and core. BUILD settings offer short presets, and push-ups can optionally return to the original table’s 45–120-second rest. Completing a non-final set starts a countdown that can be paused, extended, or skipped; longer rest is always allowed.
+BUILD prescriptions also include configurable recovery guidance. Dense defaults use 60 seconds for pull-ups, push-ups, and strength accessories, plus 45 seconds for conditioning and core. BUILD settings offer short presets, and push-ups can optionally return to the original table’s 45–120-second rest. Completing a non-final set starts a countdown that can be paused, extended, or skipped; longer rest is always allowed. During execution, the player keeps the screen awake, focuses on the current set or rest interval, previews the next action, beeps for the final five rest seconds, and plays a stronger transition cue when it is time to move.
 
 ## Architecture
 
@@ -68,10 +68,21 @@ Requires Node 20.19.4 or newer and pnpm 10.8.1.
 
 ```bash
 pnpm install
-pnpm start
+pnpm dev
 ```
 
-Open the app with Expo Go, an iOS/Android development build, or the web target.
+Fitness Forge uses a custom Expo development build instead of Expo Go. The development app is named **Fitness Forge Dev**, uses the iOS bundle identifier `com.jystringfellow.fitnessforge.dev`, and can remain installed beside the TestFlight app.
+
+For the first physical-device installation:
+
+```bash
+pnpm dlx eas-cli@latest device:create
+pnpm dlx eas-cli@latest build --platform ios --profile development
+```
+
+Install the resulting build from its EAS link or QR code and enable Developer Mode on the iPhone if prompted. For normal TypeScript and UI work, run `pnpm dev`, open Fitness Forge Dev, and use Fast Refresh; rebuild the development client only after adding native dependencies or changing native configuration. `pnpm dev:ios` provides the corresponding local Xcode/iOS Simulator path.
+
+The development profile deliberately loads the same EAS production environment and therefore uses the same Supabase project as TestFlight. Sign into the same Fitness Forge account to work with real prescriptions and history. Before switching between Dev and TestFlight, wait for the active installation to show **Backed up**; avoid editing the same workout offline in both installations.
 
 ## Optional Supabase backup
 
@@ -83,7 +94,7 @@ The app works without Supabase. When configured, every workout still saves to As
 4. Restart Expo with `pnpm exec expo start --clear`.
 5. Open Settings, create an account or sign in, and use **Back Up Now** to verify the connection.
 
-In Supabase Authentication > URL Configuration, set the Site URL to `fitnessforge://auth/callback` and add `fitnessforge://**` to Additional Redirect URLs. Confirmation links then open the installed iOS app, which exchanges the callback credentials for a persisted session. Expo Go cannot claim the custom `fitnessforge` scheme; for Expo Go-only signup testing, temporarily disable email confirmation or confirm the email and return to the app to sign in manually.
+In Supabase Authentication > URL Configuration, set the Site URL to `fitnessforge://auth/callback` and add both `fitnessforge://**` and `fitnessforge-dev://**` to Additional Redirect URLs. Confirmation links then open the appropriate installed iOS app, which exchanges the callback credentials for a persisted session.
 
 Email/password authentication is the initial login method. Supabase projects commonly require new users to confirm their email; that behavior is controlled in the project’s Auth settings.
 
@@ -106,7 +117,7 @@ Before building, apply the Supabase migration and upload `EXPO_PUBLIC_SUPABASE_U
 pnpm dlx eas-cli@latest build --platform ios --profile production --auto-submit
 ```
 
-Apple and Expo authentication happens interactively. TestFlight installations have a different local storage sandbox from Expo Go; back up existing Expo Go data first, then sign into the same Fitness Forge account in the TestFlight build to restore it.
+Apple and Expo authentication happens interactively. TestFlight and development installations have separate local storage sandboxes. Sign into the same Fitness Forge account to restore the shared Supabase state, and allow one installation to finish backing up before switching to the other.
 
 Useful checks:
 

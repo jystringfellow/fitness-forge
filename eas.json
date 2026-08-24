@@ -4,6 +4,15 @@
     "appVersionSource": "remote"
   },
   "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "environment": "production",
+      "env": {
+        "APP_VARIANT": "development",
+        "EXPO_PUBLIC_AUTH_SCHEME": "fitnessforge-dev"
+      }
+    },
     "preview": {
       "distribution": "internal",
       "environment": "preview"

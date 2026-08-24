@@ -1,4 +1,10 @@
-export const AUTH_CALLBACK_URL = 'fitnessforge://auth/callback';
+const authScheme = process.env.EXPO_PUBLIC_AUTH_SCHEME?.trim() || 'fitnessforge';
+
+export function getAuthCallbackUrl(scheme: string): string {
+  return `${scheme.trim() || 'fitnessforge'}://auth/callback`;
+}
+
+export const AUTH_CALLBACK_URL = getAuthCallbackUrl(authScheme);
 
 export type AuthCallbackResult =
   | { type: 'session'; accessToken: string; refreshToken: string }
