@@ -6,6 +6,7 @@ import { getPushupProgramPrescription } from '@/data/pushupProgram';
 import { loadBuildProfile, resetBuildData, saveActiveBuildWorkout, saveBuildProfile } from '@/storage/appStorage';
 import { theme } from '@/theme/brand';
 import { BuildProfile, PushupVariation } from '@/types/build';
+import { useAuth } from '@/auth/AuthProvider';
 
 function NumberField({ label, value, onChange, suffix }: { label: string; value: string; onChange: (value: string) => void; suffix?: string }) {
   return <View style={styles.field}><Text style={styles.label}>{label}</Text><View style={styles.inputRow}><TextInput accessibilityLabel={label} style={styles.input} value={value} onChangeText={(text) => onChange(text.replace(/[^0-9]/g, ''))} keyboardType="number-pad" /><Text style={styles.suffix}>{suffix}</Text></View></View>;
@@ -17,6 +18,7 @@ function RestChoice<T extends string | number>({ label, value, options, onChange
 
 export default function BuildScreen() {
   const router = useRouter();
+  const { dataRevision } = useAuth();
   const [profile, setProfile] = useState<BuildProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [pullupEnabled, setPullupEnabled] = useState(true);
@@ -29,7 +31,7 @@ export default function BuildScreen() {
 
   useFocusEffect(useCallback(() => {
     loadBuildProfile().then((saved) => { setProfile(saved); setLoading(false); }).catch(() => setLoading(false));
-  }, []));
+  }, [dataRevision]));
 
   const activate = async () => {
     const next = createInitialBuildProfile({

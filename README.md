@@ -2,7 +2,7 @@
 
 **BUILD your capabilities. FORGE your fitness.**
 
-Fitness Forge is a local-first Expo app for deliberate physical progress and varied daily training.
+Fitness Forge is a local-first Expo app for deliberate physical progress and varied daily training. Optional Supabase accounts add private cloud backup without making a network connection necessary to complete a workout.
 
 ## BUILD + FORGE
 
@@ -29,6 +29,9 @@ BUILD prescriptions also include configurable recovery guidance. Dense defaults 
 - `src/lib/pushupProgression.ts` — pure push-up programming, assessment, and variation graduation
 - `src/lib/buildProgression.ts` — applies completed workout results to the saved profile
 - `src/storage/appStorage.ts` — versioned AsyncStorage keys for BUILD state, the active prescription, and unified history
+- `src/storage/cloudSync.ts` — local-first Supabase synchronization and safe account adoption
+- `src/auth/AuthProvider.tsx` — persistent Supabase sessions, background backup, and sync status
+- `supabase/migrations/` — cloud tables, constraints, grants, and per-user Row Level Security policies
 - `src/lib/generateWorkout.ts` — existing FORGE generation logic
 - `app/` — Expo Router screens for Today, Build, Forge, Progress, History, and the two source-specific players
 
@@ -70,6 +73,41 @@ pnpm start
 
 Open the app with Expo Go, an iOS/Android development build, or the web target.
 
+## Optional Supabase backup
+
+The app works without Supabase. When configured, every workout still saves to AsyncStorage first and then syncs in the background. Failed uploads never discard the device copy.
+
+1. Create or choose a Supabase project.
+2. Apply `supabase/migrations/20260823000000_create_fitness_forge_cloud_backup.sql` with the Supabase SQL Editor, or link the Supabase CLI and run `supabase db push`.
+3. Copy `.env.example` to `.env` and add the project URL and publishable key from the Supabase Connect panel.
+4. Restart Expo with `pnpm exec expo start --clear`.
+5. Open Settings, create an account or sign in, and use **Back Up Now** to verify the connection.
+
+In Supabase Authentication > URL Configuration, set the Site URL to `fitnessforge://auth/callback` and add `fitnessforge://**` to Additional Redirect URLs. Confirmation links then open the installed iOS app, which exchanges the callback credentials for a persisted session. Expo Go cannot claim the custom `fitnessforge` scheme; for Expo Go-only signup testing, temporarily disable email confirmation or confirm the email and return to the app to sign in manually.
+
+Email/password authentication is the initial login method. Supabase projects commonly require new users to confirm their email; that behavior is controlled in the project’s Auth settings.
+
+The publishable key is intentionally available to the Expo client. Never add a secret or service-role key to the app. Cloud access is protected by grants and Row Level Security policies requiring `auth.uid() = user_id` on both Fitness Forge tables.
+
+Cloud storage uses two prefixed tables:
+
+- `fitness_forge_user_data` stores one versioned BUILD/profile snapshot and active workouts per user.
+- `fitness_forge_workout_sessions` stores idempotent BUILD and FORGE history rows keyed by user and stable workout ID.
+
+On the first sign-in to an empty cloud account, existing anonymous device data is uploaded. If the account already has cloud state, that state wins on a device that has never linked it. Workout histories are merged by stable ID. To prevent cross-account leakage or local data loss, cloud sync refuses to relink an installation already owned by a different user; multi-account device switching is not part of this first version. Completed sessions merge safely across devices, while simultaneous offline edits to the BUILD profile currently use last-successful-sync behavior rather than field-level conflict resolution.
+
+## Private iOS distribution
+
+The iOS app uses bundle identifier `com.jystringfellow.fitnessforge` and is linked to the `@jystringfellow/fitness-forge` EAS project. `eas.json` defines a production TestFlight build using the EAS `production` environment and automatic build-number increments.
+
+Before building, apply the Supabase migration and upload `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` to the EAS production environment. Then build and submit with:
+
+```bash
+pnpm dlx eas-cli@latest build --platform ios --profile production --auto-submit
+```
+
+Apple and Expo authentication happens interactively. TestFlight installations have a different local storage sandbox from Expo Go; back up existing Expo Go data first, then sign into the same Fitness Forge account in the TestFlight build to restore it.
+
 Useful checks:
 
 ```bash
@@ -81,4 +119,4 @@ pnpm build:web
 
 ## Current scope
 
-Data is local to the device; there are no accounts or cloud sync. BUILD readiness adjustments, exercise substitution, program-template editing, and running/soccer tracking are future extensions. The app is training software, not medical advice; stop a set when form changes or pain occurs.
+Anonymous data remains local to the device. Supabase backup is optional and currently supports email/password accounts; password reset, social login, account deletion, and advanced multi-device conflict resolution remain future work. BUILD readiness adjustments, exercise substitution, program-template editing, and running/soccer tracking are also future extensions. The app is training software, not medical advice; stop a set when form changes or pain occurs.

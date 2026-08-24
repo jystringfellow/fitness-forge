@@ -3,6 +3,8 @@ import { DEFAULT_BUILD_REST_PREFERENCES } from '@/data/buildProgram';
 import { getInitialPushupProgramWeek, selectPushupBracket } from '@/data/pushupProgram';
 import { BuildProfile, BuildWorkoutPrescription, WorkoutHistoryEntry } from '@/types/build';
 import { WorkoutPlan } from '@/types/workout';
+import { MAX_LOCAL_HISTORY } from '@/lib/cloudMerge';
+import { markCloudDataDirty } from '@/storage/cloudMetadata';
 
 const KEYS = {
   profile: 'fitness_forge/build_profile_v1',
@@ -75,6 +77,7 @@ export async function loadBuildProfile(): Promise<BuildProfile | null> {
 
 export async function saveBuildProfile(profile: BuildProfile): Promise<void> {
   await AsyncStorage.setItem(KEYS.profile, JSON.stringify(profile));
+  await markCloudDataDirty();
 }
 
 export function loadActiveBuildWorkout(): Promise<BuildWorkoutPrescription | null> {
@@ -84,9 +87,11 @@ export function loadActiveBuildWorkout(): Promise<BuildWorkoutPrescription | nul
 export async function saveActiveBuildWorkout(workout: BuildWorkoutPrescription | null): Promise<void> {
   if (!workout) {
     await AsyncStorage.removeItem(KEYS.activeBuildWorkout);
+    await markCloudDataDirty();
     return;
   }
   await AsyncStorage.setItem(KEYS.activeBuildWorkout, JSON.stringify(workout));
+  await markCloudDataDirty();
 }
 
 export async function loadWorkoutHistory(): Promise<WorkoutHistoryEntry[]> {
@@ -98,11 +103,12 @@ export async function appendWorkoutHistory(entry: WorkoutHistoryEntry): Promise<
   const next = prependUniqueHistory(history, entry);
   if (next === history) return;
   await AsyncStorage.setItem(KEYS.history, JSON.stringify(next));
+  await markCloudDataDirty();
 }
 
 export function prependUniqueHistory(history: WorkoutHistoryEntry[], entry: WorkoutHistoryEntry): WorkoutHistoryEntry[] {
   if (history.some((item) => item.id === entry.id)) return history;
-  return [entry, ...history].slice(0, 250);
+  return [entry, ...history].slice(0, MAX_LOCAL_HISTORY);
 }
 
 export async function recordForgeCompletion(plan: WorkoutPlan): Promise<void> {
@@ -122,6 +128,7 @@ export async function resetBuildData(): Promise<void> {
     AsyncStorage.removeItem(KEYS.profile),
     AsyncStorage.removeItem(KEYS.activeBuildWorkout)
   ]);
+  await markCloudDataDirty();
 }
 
 export const STORAGE_KEYS = KEYS;

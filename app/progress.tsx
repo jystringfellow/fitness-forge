@@ -5,16 +5,18 @@ import { loadBuildProfile, loadWorkoutHistory } from '@/storage/appStorage';
 import { getPushupProgramPrescription } from '@/data/pushupProgram';
 import { theme } from '@/theme/brand';
 import { BuildProfile, BuildWorkoutResult } from '@/types/build';
+import { useAuth } from '@/auth/AuthProvider';
 
 export default function ProgressScreen() {
   const router = useRouter();
+  const { dataRevision } = useAuth();
   const [profile, setProfile] = useState<BuildProfile | null>(null);
   const [results, setResults] = useState<BuildWorkoutResult[]>([]);
   useFocusEffect(useCallback(() => {
     Promise.all([loadBuildProfile(), loadWorkoutHistory()]).then(([saved, history]) => {
       setProfile(saved); setResults(history.filter((item): item is BuildWorkoutResult => item.source === 'BUILD'));
     });
-  }, []));
+  }, [dataRevision]));
 
   if (!profile?.active) return <View style={styles.center}><Text style={styles.title}>Progress starts with BUILD.</Text><Text style={styles.body}>Set a capability goal, then every result keeps its variation, assistance, targets, and actual performance.</Text><TouchableOpacity style={styles.primary} onPress={() => router.push('/build')}><Text style={styles.primaryText}>Set Up BUILD</Text></TouchableOpacity></View>;
 

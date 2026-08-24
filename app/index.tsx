@@ -4,6 +4,7 @@ import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, TouchableOpacit
 import { createBuildWorkout } from '@/data/buildProgram';
 import { loadActiveBuildWorkout, loadBuildProfile, loadWorkoutHistory, saveActiveBuildWorkout } from '@/storage/appStorage';
 import { brandIcon, theme } from '@/theme/brand';
+import { useAuth } from '@/auth/AuthProvider';
 import { BuildProfile, BuildWorkoutPrescription, BuildWorkoutResult } from '@/types/build';
 
 function setSummary(exercise: BuildWorkoutPrescription['exercises'][number]): string {
@@ -23,6 +24,7 @@ function restSummary(seconds: number): string {
 
 export default function TodayScreen() {
   const router = useRouter();
+  const { dataRevision } = useAuth();
   const [profile, setProfile] = useState<BuildProfile | null>(null);
   const [workout, setWorkout] = useState<BuildWorkoutPrescription | null>(null);
   const [lastResult, setLastResult] = useState<BuildWorkoutResult | null>(null);
@@ -52,7 +54,7 @@ export default function TodayScreen() {
     };
     refresh().catch(() => setLoading(false));
     return () => { active = false; };
-  }, []));
+  }, [dataRevision]));
 
   if (loading) {
     return <View style={styles.center}><ActivityIndicator color={theme.colors.lime} /><Text style={styles.muted}>Preparing today…</Text></View>;

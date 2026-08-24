@@ -4,6 +4,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { loadWorkoutHistory } from '@/storage/appStorage';
 import { theme } from '@/theme/brand';
 import { BuildWorkoutResult, WorkoutHistoryEntry } from '@/types/build';
+import { useAuth } from '@/auth/AuthProvider';
 
 function reps(exercise: BuildWorkoutResult['exercises'][number]): string {
   const completed = exercise.completedSets.filter((set) => set.status === 'completed');
@@ -16,8 +17,9 @@ function reps(exercise: BuildWorkoutResult['exercises'][number]): string {
 }
 
 export default function HistoryScreen() {
+  const { dataRevision } = useAuth();
   const [history, setHistory] = useState<WorkoutHistoryEntry[]>([]);
-  useFocusEffect(useCallback(() => { loadWorkoutHistory().then(setHistory); }, []));
+  useFocusEffect(useCallback(() => { loadWorkoutHistory().then(setHistory); }, [dataRevision]));
   return <ScrollView style={styles.container} contentContainerStyle={styles.content}>
     <Text style={styles.kicker}>BUILD + FORGE</Text><Text style={styles.title}>Workout History</Text><Text style={styles.body}>Every session stays recognizable: source, variation, assistance, load, and planned-versus-actual context.</Text>
     {!history.length ? <View style={styles.empty}><Text style={styles.cardTitle}>Nothing recorded yet.</Text><Text style={styles.body}>Complete a BUILD or FORGE session and it will appear here.</Text></View> : history.map((entry) => <View key={entry.id} style={styles.card}>
