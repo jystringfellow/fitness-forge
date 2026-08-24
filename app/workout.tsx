@@ -3,6 +3,7 @@ import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 import * as Speech from 'expo-speech';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useWorkoutWakeLock } from '@/hooks/useWorkoutWakeLock';
 import { loadCurrentWorkout, setCurrentWorkout } from '@/storage/workoutStorage';
 import { recordForgeCompletion } from '@/storage/appStorage';
 import { brandIcon, theme } from '@/theme/brand';
@@ -93,6 +94,8 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
   const [timeRemaining, setTimeRemaining] = useState<number>(() => steps[0]?.durationSecs ?? 0);
   const transitionPlayer = useAudioPlayer(transitionChime);
   const recordedCompletionRef = useRef(false);
+
+  useWorkoutWakeLock(timerState !== 'completed', 'fitness-forge-forge-workout');
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const spokenWarningRef = useRef<string | null>(null);

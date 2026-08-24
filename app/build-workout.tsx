@@ -1,10 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 import { useRouter } from 'expo-router';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useWorkoutWakeLock } from '@/hooks/useWorkoutWakeLock';
 import { advanceBuildProfile, getProgressionSummaries } from '@/lib/buildProgression';
+import { getLastCompletedSetPosition, getPendingSetPositions, getRestAudioCue, SetPosition } from '@/lib/buildWorkoutFlow';
 import { appendWorkoutHistory, loadActiveBuildWorkout, loadBuildProfile, saveActiveBuildWorkout, saveBuildProfile } from '@/storage/appStorage';
 import { theme } from '@/theme/brand';
 import { BuildProfile, BuildWorkoutPrescription, BuildWorkoutResult, ExercisePrescription, SetStatus } from '@/types/build';
+
+const restChime = require('../assets/timer-switch.wav');
 
 interface DraftSet {
   id: string;
@@ -50,6 +55,18 @@ function Stepper({ label, value, step = 1, minimum = 0, onChange }: { label: str
   return <View style={styles.stepper}><Text style={styles.stepperLabel}>{label}</Text><View style={styles.stepperControls}><TouchableOpacity accessibilityLabel={`Decrease ${label}`} style={styles.stepButton} onPress={() => onChange(Math.max(minimum, value - step))}><Text style={styles.stepText}>−</Text></TouchableOpacity><Text style={styles.stepValue}>{value}</Text><TouchableOpacity accessibilityLabel={`Increase ${label}`} style={styles.stepButton} onPress={() => onChange(value + step)}><Text style={styles.stepText}>+</Text></TouchableOpacity></View></View>;
 }
 
+function formatRestTime(seconds: number): string {
+  return `${Math.floor(seconds / 60)}:${(seconds % 60).toString().padStart(2, '0')}`;
+}
+
+function setTarget(exercise: DraftExercise, setIndex: number): string {
+  const set = exercise.sets[setIndex];
+  const reps = `${set.targetReps}${set.targetType === 'minimum' ? '+' : ''}${set.perSide ? ' / side' : ''}`;
+  if (set.targetAssistanceLb !== undefined) return `${reps} reps · ${set.targetAssistanceLb} lb assist`;
+  if (set.targetLoadLb !== undefined) return `${reps} reps · ${set.targetLoadLb} lb`;
+  return `${reps} reps`;
+}
+
 export default function BuildWorkoutScreen() {
   const router = useRouter();
   const [workout, setWorkout] = useState<BuildWorkoutPrescription | null>(null);
@@ -60,10 +77,13 @@ export default function BuildWorkoutScreen() {
   const [saving, setSaving] = useState(false);
   const [summary, setSummary] = useState<string[] | null>(null);
   const [restTimer, setRestTimer] = useState<RestTimer | null>(null);
+  const restPlayer = useAudioPlayer(restChime);
+  const playedCueSecondRef = useRef<number | null>(null);
+
+  useWorkoutWakeLock(Boolean(workout && profile && !summary), 'fitness-forge-build-workout');
 
   useEffect(() => {
     const load = async () => {
-      // Loading the profile first allows schema migration to invalidate an old active prescription.
       const savedProfile = await loadBuildProfile();
       const savedWorkout = await loadActiveBuildWorkout();
       setWorkout(savedWorkout);
@@ -75,47 +95,94 @@ export default function BuildWorkoutScreen() {
   }, []);
 
   useEffect(() => {
+    restPlayer.volume = 0.35;
+    setAudioModeAsync({ playsInSilentMode: true }).catch(() => {
+      // Audio cues are helpful but never allowed to block the workout.
+    });
+  }, [restPlayer]);
+
+  useEffect(() => {
     if (!restTimer || restTimer.paused || restTimer.remainingSeconds <= 0) return;
-    const interval = setInterval(() => {
+    const timeout = setTimeout(() => {
       setRestTimer((current) => current ? { ...current, remainingSeconds: Math.max(0, current.remainingSeconds - 1) } : null);
     }, 1000);
-    return () => clearInterval(interval);
-  }, [restTimer?.paused, restTimer?.remainingSeconds]);
+    return () => clearTimeout(timeout);
+  }, [restTimer]);
+
+  useEffect(() => {
+    if (!restTimer) {
+      playedCueSecondRef.current = null;
+      return;
+    }
+    const cue = getRestAudioCue(restTimer.remainingSeconds, restTimer.paused);
+    if (!cue || playedCueSecondRef.current === restTimer.remainingSeconds) return;
+    playedCueSecondRef.current = restTimer.remainingSeconds;
+    restPlayer.volume = cue === 'start' ? 0.9 : 0.35;
+    restPlayer.seekTo(0).then(() => restPlayer.play()).catch(() => {
+      // The visual countdown remains authoritative if playback is unavailable.
+    });
+    if (cue === 'start') {
+      const timeout = setTimeout(() => {
+        setRestTimer((current) => current?.remainingSeconds === 0 ? null : current);
+      }, 900);
+      return () => clearTimeout(timeout);
+    }
+  }, [restPlayer, restTimer]);
 
   const updateSet = (exerciseIndex: number, setIndex: number, update: Partial<DraftSet>) => {
     setDraft((current) => current.map((exercise, index) => index !== exerciseIndex ? exercise : {
-      ...exercise, sets: exercise.sets.map((set, innerIndex) => innerIndex === setIndex ? { ...set, ...update } : set)
+      ...exercise,
+      sets: exercise.sets.map((set, innerIndex) => innerIndex === setIndex ? { ...set, ...update } : set)
     }));
   };
 
-  const toggleSetComplete = (exerciseIndex: number, setIndex: number) => {
+  const updateNotes = (exerciseIndex: number, notes: string) => {
+    setDraft((current) => current.map((exercise, index) => index === exerciseIndex ? { ...exercise, notes } : exercise));
+  };
+
+  const completeSet = ({ exerciseIndex, setIndex }: SetPosition) => {
     const exercise = draft[exerciseIndex];
-    const set = exercise.sets[setIndex];
-    const completing = set.status !== 'completed';
-    updateSet(exerciseIndex, setIndex, { status: completing ? 'completed' : 'pending' });
-    if (!completing && restTimer?.exerciseIndex === exerciseIndex) {
-      setRestTimer(null);
-      return;
-    }
+    updateSet(exerciseIndex, setIndex, { status: 'completed' });
     const anotherSetRemains = exercise.sets.slice(setIndex + 1).some((candidate) => candidate.status === 'pending');
-    if (completing && anotherSetRemains && exercise.restSecondsBetweenSets > 0) {
+    if (anotherSetRemains && exercise.restSecondsBetweenSets > 0) {
+      playedCueSecondRef.current = null;
       setRestTimer({ exerciseIndex, remainingSeconds: exercise.restSecondsBetweenSets, paused: false });
     }
   };
 
-  const formatRestTime = (seconds: number) => `${Math.floor(seconds / 60)}:${(seconds % 60).toString().padStart(2, '0')}`;
+  const skipRemainingExercise = (exerciseIndex: number) => {
+    setRestTimer(null);
+    setDraft((current) => current.map((exercise, index) => {
+      if (index !== exerciseIndex) return exercise;
+      const hasCompletedSet = exercise.sets.some((set) => set.status === 'completed');
+      return {
+        ...exercise,
+        skipped: !hasCompletedSet,
+        sets: exercise.sets.map((set) => set.status === 'pending' ? { ...set, status: 'skipped' as const } : set)
+      };
+    }));
+  };
 
-  const toggleExercise = (exerciseIndex: number) => {
+  const restoreLastCompletedSet = () => {
+    const previous = getLastCompletedSetPosition(draft);
+    if (!previous) return;
+    setRestTimer(null);
+    updateSet(previous.exerciseIndex, previous.setIndex, { status: 'pending' });
+  };
+
+  const restoreSet = ({ exerciseIndex, setIndex }: SetPosition) => {
+    setRestTimer(null);
     setDraft((current) => current.map((exercise, index) => index !== exerciseIndex ? exercise : {
       ...exercise,
-      skipped: !exercise.skipped,
-      sets: exercise.sets.map((set) => ({ ...set, status: !exercise.skipped ? 'skipped' : 'pending' }))
+      skipped: false,
+      sets: exercise.sets.map((set, innerIndex) => innerIndex === setIndex ? { ...set, status: 'pending' } : set)
     }));
   };
 
   const finish = async () => {
     if (!workout || !profile || saving) return;
     setSaving(true);
+    setRestTimer(null);
     const completedAt = new Date().toISOString();
     const exercises = draft.map((exercise) => ({
       prescriptionId: exercise.id,
@@ -169,35 +236,121 @@ export default function BuildWorkoutScreen() {
   if (!workout || !profile) return <View style={styles.center}><Text style={styles.body}>No active BUILD workout.</Text><TouchableOpacity style={styles.primary} onPress={() => router.replace('/')}><Text style={styles.primaryText}>Go to Today</Text></TouchableOpacity></View>;
   if (summary) return <ScrollView style={styles.container} contentContainerStyle={styles.content}><Text style={styles.kicker}>SESSION RECORDED</Text><Text style={styles.title}>Good work. Keep it repeatable.</Text><View style={styles.summaryCard}>{summary.map((line) => <Text key={line} style={styles.summaryLine}>{line}</Text>)}</View><Text style={styles.body}>Progress is based on what you recorded. A partial session never triggers an aggressive jump.</Text><TouchableOpacity style={styles.primary} onPress={() => router.replace('/')}><Text style={styles.primaryText}>See Next Workout</Text></TouchableOpacity></ScrollView>;
 
-  const doneCount = draft.flatMap((exercise) => exercise.sets).filter((set) => set.status !== 'pending').length;
+  const pendingPositions = getPendingSetPositions(draft);
+  const currentPosition = pendingPositions[0] ?? null;
+  const nextPosition = pendingPositions[1] ?? null;
+  const currentExercise = currentPosition ? draft[currentPosition.exerciseIndex] : null;
+  const currentSet = currentPosition && currentExercise ? currentExercise.sets[currentPosition.setIndex] : null;
+  const completedCount = draft.flatMap((exercise) => exercise.sets).filter((set) => set.status === 'completed').length;
   const totalCount = draft.flatMap((exercise) => exercise.sets).length;
+  const lastCompleted = getLastCompletedSetPosition(draft);
+
+  const preview = (() => {
+    if (restTimer && currentPosition && currentExercise) {
+      return `${currentExercise.name} · Set ${currentPosition.setIndex + 1} · ${setTarget(currentExercise, currentPosition.setIndex)}`;
+    }
+    if (!currentPosition || !currentExercise || !nextPosition) return 'Complete and save the workout';
+    const nextExercise = draft[nextPosition.exerciseIndex];
+    const nextSetText = `${nextExercise.name} · Set ${nextPosition.setIndex + 1} · ${setTarget(nextExercise, nextPosition.setIndex)}`;
+    return nextPosition.exerciseIndex === currentPosition.exerciseIndex && currentExercise.restSecondsBetweenSets > 0
+      ? `Rest ${formatRestTime(currentExercise.restSecondsBetweenSets)}, then ${nextSetText}`
+      : nextSetText;
+  })();
 
   return <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-    <View style={styles.header}><View><Text style={styles.kicker}>{workout.scheduledDay.toUpperCase()} · BUILD</Text><Text style={styles.title}>{workout.title}</Text></View><Text style={styles.counter}>{doneCount}/{totalCount} sets</Text></View>
-    <Text style={styles.body}>Targets stay visible. Adjust the actual value, then mark each set complete. Planned values are preserved separately.</Text>
-    {draft.map((exercise, exerciseIndex) => <View key={exercise.id} style={[styles.exerciseCard, exercise.skipped && styles.skippedCard]}>
-      <View style={styles.exerciseHeader}><View style={styles.exerciseCopy}><Text style={styles.exerciseName}>{exercise.name}</Text><Text style={styles.progression}>{exercise.progressionLabel}</Text></View><TouchableOpacity onPress={() => toggleExercise(exerciseIndex)}><Text style={styles.skipText}>{exercise.skipped ? 'Restore' : 'Skip exercise'}</Text></TouchableOpacity></View>
-      <Text style={styles.restPrescription}>{exercise.restSecondsBetweenSets ? `Rest ${formatRestTime(exercise.restSecondsBetweenSets)} between sets` : 'Single assessment set'}</Text><Text style={styles.cue}>{exercise.cue}</Text>
-      {restTimer?.exerciseIndex === exerciseIndex ? <View style={[styles.restBanner, restTimer.remainingSeconds === 0 && styles.restComplete]}><View style={styles.restCopy}><Text style={styles.restKicker}>{restTimer.remainingSeconds === 0 ? 'REST COMPLETE' : restTimer.paused ? 'REST PAUSED' : 'RESTING'}</Text><Text style={styles.restExercise}>{exercise.name} · longer if required</Text></View><Text style={styles.restTime}>{formatRestTime(restTimer.remainingSeconds)}</Text><View style={styles.restActions}>{restTimer.remainingSeconds > 0 ? <TouchableOpacity onPress={() => setRestTimer((current) => current ? { ...current, paused: !current.paused } : null)}><Text style={styles.restAction}>{restTimer.paused ? 'Resume' : 'Pause'}</Text></TouchableOpacity> : null}<TouchableOpacity onPress={() => setRestTimer((current) => current ? { ...current, remainingSeconds: current.remainingSeconds + 30 } : null)}><Text style={styles.restAction}>+30s</Text></TouchableOpacity><TouchableOpacity onPress={() => setRestTimer(null)}><Text style={styles.restAction}>{restTimer.remainingSeconds === 0 ? 'Done' : 'Skip rest'}</Text></TouchableOpacity></View></View> : null}
-      {!exercise.skipped ? exercise.sets.map((set, setIndex) => <View key={set.id} style={[styles.setRow, set.status === 'completed' && styles.completedSet, set.status === 'skipped' && styles.skippedSet]}>
-        <View style={styles.setTopline}><Text style={styles.setName}>Set {setIndex + 1} of {exercise.sets.length}</Text><Text style={styles.target}>Target {set.targetReps}{set.targetType === 'minimum' ? '+' : ''}{set.perSide ? ' / side' : ''}</Text></View>
-        {set.targetType === 'minimum' ? <Text style={styles.minimumCue}>Do at least {set.targetReps} good-form reps. Continue if you feel capable.</Text> : null}
-        <View style={styles.steppers}><Stepper label="Reps" value={set.actualReps} onChange={(value) => updateSet(exerciseIndex, setIndex, { actualReps: value })} />{set.actualAssistanceLb !== undefined ? <Stepper label="Assist lb" value={set.actualAssistanceLb} step={profile.pullup.assistanceIncrementLb} onChange={(value) => updateSet(exerciseIndex, setIndex, { actualAssistanceLb: value })} /> : null}{set.actualLoadLb !== undefined ? <Stepper label="Load lb" value={set.actualLoadLb} step={5} onChange={(value) => updateSet(exerciseIndex, setIndex, { actualLoadLb: value })} /> : null}</View>
-        <View style={styles.setActions}><TouchableOpacity style={[styles.completeButton, set.status === 'completed' && styles.completeButtonActive]} onPress={() => toggleSetComplete(exerciseIndex, setIndex)}><Text style={[styles.completeText, set.status === 'completed' && styles.completeTextActive]}>{set.status === 'completed' ? '✓ Complete' : 'Complete set'}</Text></TouchableOpacity><TouchableOpacity onPress={() => updateSet(exerciseIndex, setIndex, { status: set.status === 'skipped' ? 'pending' : 'skipped' })}><Text style={styles.skipText}>{set.status === 'skipped' ? 'Restore' : 'Skip'}</Text></TouchableOpacity></View>
-      </View>) : null}
-      {!exercise.skipped ? <TextInput accessibilityLabel={`${exercise.name} notes`} placeholder="Optional notes" placeholderTextColor={theme.colors.textSubtle} value={exercise.notes} onChangeText={(notes) => setDraft((current) => current.map((item, index) => index === exerciseIndex ? { ...item, notes } : item))} style={styles.notes} /> : null}
-    </View>)}
-    <TouchableOpacity disabled={saving} style={[styles.primary, saving && styles.disabled]} onPress={finish}><Text style={styles.primaryText}>{saving ? 'Saving…' : doneCount === 0 ? 'Skip & Record Workout' : 'COMPLETE WORKOUT'}</Text></TouchableOpacity>
-    {doneCount < totalCount && doneCount > 0 ? <Text style={styles.partialNote}>Unmarked sets will be saved as skipped. Partial work is still useful information.</Text> : null}
+    <View style={styles.header}><View><Text style={styles.kicker}>{workout.scheduledDay.toUpperCase()} · BUILD</Text><Text style={styles.title}>{workout.title}</Text></View><Text style={styles.counter}>{completedCount}/{totalCount}</Text></View>
+
+    {restTimer ? <View style={[styles.focusCard, styles.restCard, restTimer.remainingSeconds <= 5 && styles.restEnding]}>
+      <Text style={styles.focusKicker}>{restTimer.remainingSeconds === 0 ? 'START' : restTimer.paused ? 'REST PAUSED' : restTimer.remainingSeconds <= 5 ? 'GET READY' : 'REST'}</Text>
+      <Text accessibilityLiveRegion="polite" style={styles.restTime}>{formatRestTime(restTimer.remainingSeconds)}</Text>
+      <Text style={styles.restExercise}>Longer is always available if your form or breathing needs it.</Text>
+      <View style={styles.restActions}>
+        {restTimer.remainingSeconds > 0 ? <TouchableOpacity style={styles.secondaryButton} onPress={() => setRestTimer((current) => current ? { ...current, paused: !current.paused } : null)}><Text style={styles.secondaryText}>{restTimer.paused ? 'Resume' : 'Pause'}</Text></TouchableOpacity> : null}
+        <TouchableOpacity style={styles.secondaryButton} onPress={() => setRestTimer((current) => current ? { ...current, remainingSeconds: current.remainingSeconds + 30 } : null)}><Text style={styles.secondaryText}>+30 sec</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.secondaryButton} onPress={() => setRestTimer(null)}><Text style={styles.secondaryText}>Skip rest</Text></TouchableOpacity>
+      </View>
+    </View> : currentPosition && currentExercise && currentSet ? <View style={styles.focusCard}>
+      <View style={styles.focusTopline}><View style={styles.focusCopy}><Text style={styles.focusKicker}>NOW · SET {currentPosition.setIndex + 1} OF {currentExercise.sets.length}</Text><Text style={styles.exerciseName}>{currentExercise.name}</Text><Text style={styles.progression}>{currentExercise.progressionLabel}</Text></View><TouchableOpacity onPress={() => skipRemainingExercise(currentPosition.exerciseIndex)}><Text style={styles.skipText}>{currentPosition.setIndex === 0 ? 'Skip exercise' : 'Skip remaining'}</Text></TouchableOpacity></View>
+      <View style={styles.targetBlock}><Text style={styles.targetLabel}>TARGET</Text><Text style={styles.targetValue}>{currentSet.targetReps}{currentSet.targetType === 'minimum' ? '+' : ''}{currentSet.perSide ? ' / side' : ''}</Text><Text style={styles.targetUnit}>reps{currentSet.targetAssistanceLb !== undefined ? ` · ${currentSet.targetAssistanceLb} lb assistance` : currentSet.targetLoadLb !== undefined ? ` · ${currentSet.targetLoadLb} lb` : ''}</Text></View>
+      {currentSet.targetType === 'minimum' ? <Text style={styles.minimumCue}>Do at least {currentSet.targetReps} excellent reps. Continue only while form stays strong.</Text> : null}
+      <Text style={styles.cue}>{currentExercise.cue}</Text>
+      <View style={styles.steppers}><Stepper label="Actual reps" value={currentSet.actualReps} onChange={(value) => updateSet(currentPosition.exerciseIndex, currentPosition.setIndex, { actualReps: value })} />{currentSet.actualAssistanceLb !== undefined ? <Stepper label="Assist lb" value={currentSet.actualAssistanceLb} step={profile.pullup.assistanceIncrementLb} onChange={(value) => updateSet(currentPosition.exerciseIndex, currentPosition.setIndex, { actualAssistanceLb: value })} /> : null}{currentSet.actualLoadLb !== undefined ? <Stepper label="Load lb" value={currentSet.actualLoadLb} step={5} onChange={(value) => updateSet(currentPosition.exerciseIndex, currentPosition.setIndex, { actualLoadLb: value })} /> : null}</View>
+      <TextInput accessibilityLabel={`${currentExercise.name} notes`} placeholder="Optional exercise notes" placeholderTextColor={theme.colors.textSubtle} value={currentExercise.notes} onChangeText={(notes) => updateNotes(currentPosition.exerciseIndex, notes)} style={styles.notes} />
+      <View style={styles.setActions}><TouchableOpacity style={styles.primarySetButton} onPress={() => completeSet(currentPosition)}><Text style={styles.primaryText}>COMPLETE SET</Text></TouchableOpacity><TouchableOpacity style={styles.secondarySetButton} onPress={() => updateSet(currentPosition.exerciseIndex, currentPosition.setIndex, { status: 'skipped' })}><Text style={styles.secondaryText}>Skip set</Text></TouchableOpacity></View>
+    </View> : <View style={[styles.focusCard, styles.readyCard]}><Text style={styles.focusKicker}>WORKOUT COMPLETE</Text><Text style={styles.exerciseName}>All sets are marked.</Text><Text style={styles.body}>Review the session map, then save your workout and calculate the next prescription.</Text></View>}
+
+    <View style={styles.nextCard}><Text style={styles.nextKicker}>UP NEXT</Text><Text style={styles.nextText}>{preview}</Text></View>
+
+    <View style={styles.sessionMap}><Text style={styles.mapTitle}>SESSION MAP · TAP A FINISHED SET TO EDIT</Text>{draft.map((exercise, exerciseIndex) => <View key={exercise.id} style={styles.mapRow}><Text style={styles.mapExercise}>{exercise.name}</Text><View style={styles.mapSets}>{exercise.sets.map((set, setIndex) => <TouchableOpacity accessibilityLabel={`${exercise.name} set ${setIndex + 1}, ${set.status}`} disabled={set.status === 'pending'} onPress={() => restoreSet({ exerciseIndex, setIndex })} key={set.id} style={[styles.mapSet, set.status === 'completed' && styles.mapSetComplete, set.status === 'skipped' && styles.mapSetSkipped, currentPosition?.exerciseIndex === exerciseIndex && currentPosition.setIndex === setIndex && styles.mapSetCurrent]}><Text style={[styles.mapSetText, set.status === 'completed' && styles.mapSetTextComplete]}>{set.status === 'completed' ? '✓' : set.status === 'skipped' ? '—' : setIndex + 1}</Text></TouchableOpacity>)}</View></View>)}</View>
+
+    <View style={styles.footerActions}>{lastCompleted ? <TouchableOpacity onPress={restoreLastCompletedSet}><Text style={styles.undoText}>Undo last completed set</Text></TouchableOpacity> : null}<TouchableOpacity disabled={saving} style={[pendingPositions.length ? styles.finishEarly : styles.primary, saving && styles.disabled]} onPress={finish}><Text style={pendingPositions.length ? styles.finishEarlyText : styles.primaryText}>{saving ? 'Saving…' : pendingPositions.length ? 'Finish workout early' : 'SAVE WORKOUT'}</Text></TouchableOpacity></View>
+    {pendingPositions.length > 0 && completedCount > 0 ? <Text style={styles.partialNote}>Finishing now saves every remaining set as skipped. Partial work is still useful information.</Text> : null}
   </ScrollView>;
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.colors.background }, content: { padding: 18, gap: 14, paddingBottom: 48, maxWidth: 760, width: '100%', alignSelf: 'center' }, center: { flex: 1, backgroundColor: theme.colors.background, alignItems: 'center', justifyContent: 'center', gap: 16, padding: 24 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }, kicker: { color: theme.colors.purple, fontSize: 12, fontWeight: '900', letterSpacing: 1 }, title: { color: theme.colors.text, fontSize: 30, fontWeight: '900' }, counter: { color: theme.colors.ink, backgroundColor: theme.colors.lime, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, overflow: 'hidden', fontWeight: '900' }, body: { color: theme.colors.textMuted, lineHeight: 21 },
-  restBanner: { backgroundColor: theme.colors.surfaceRaised, borderColor: theme.colors.purple, borderWidth: 1, borderRadius: 10, padding: 14, gap: 10, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' }, restComplete: { borderColor: theme.colors.lime }, restCopy: { flex: 1, minWidth: 140 }, restKicker: { color: theme.colors.purple, fontSize: 11, fontWeight: '900' }, restExercise: { color: theme.colors.textSoft, fontWeight: '800' }, restTime: { color: theme.colors.lime, fontSize: 30, fontWeight: '900' }, restActions: { flexDirection: 'row', gap: 12, width: '100%', justifyContent: 'flex-end' }, restAction: { color: theme.colors.textSoft, fontWeight: '800', padding: 5 },
-  exerciseCard: { backgroundColor: theme.colors.surface, borderColor: theme.colors.borderMuted, borderWidth: 1, borderRadius: 10, padding: 15, gap: 12 }, skippedCard: { opacity: 0.55 }, exerciseHeader: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 }, exerciseCopy: { flex: 1, gap: 3 }, exerciseName: { color: theme.colors.text, fontSize: 20, fontWeight: '900' }, progression: { color: theme.colors.lime, fontWeight: '700', textTransform: 'capitalize' }, restPrescription: { color: theme.colors.purple, fontSize: 13, fontWeight: '900' }, cue: { color: theme.colors.textMuted, fontSize: 13, lineHeight: 18 },
-  setRow: { backgroundColor: theme.colors.surfaceMuted, borderColor: theme.colors.borderMuted, borderWidth: 1, borderRadius: 8, padding: 12, gap: 11 }, completedSet: { borderColor: theme.colors.lime }, skippedSet: { opacity: 0.45 }, setTopline: { flexDirection: 'row', justifyContent: 'space-between' }, setName: { color: theme.colors.text, fontWeight: '900' }, target: { color: theme.colors.textSoft, fontWeight: '700' }, minimumCue: { color: theme.colors.purple, fontSize: 12, lineHeight: 17 }, steppers: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 }, stepper: { gap: 5 }, stepperLabel: { color: theme.colors.textSubtle, fontSize: 11, fontWeight: '800', textTransform: 'uppercase' }, stepperControls: { flexDirection: 'row', alignItems: 'center', borderColor: theme.colors.border, borderWidth: 1, borderRadius: 7, overflow: 'hidden' }, stepButton: { paddingHorizontal: 13, paddingVertical: 8, backgroundColor: theme.colors.surface }, stepText: { color: theme.colors.text, fontSize: 20, fontWeight: '900' }, stepValue: { color: theme.colors.text, minWidth: 38, textAlign: 'center', fontWeight: '900' },
-  setActions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, completeButton: { borderColor: theme.colors.border, borderWidth: 1, borderRadius: 7, paddingHorizontal: 13, paddingVertical: 9 }, completeButtonActive: { backgroundColor: theme.colors.lime, borderColor: theme.colors.lime }, completeText: { color: theme.colors.textSoft, fontWeight: '900' }, completeTextActive: { color: theme.colors.ink }, skipText: { color: theme.colors.textSubtle, fontSize: 12, fontWeight: '700', padding: 6 }, notes: { color: theme.colors.text, borderColor: theme.colors.border, borderWidth: 1, borderRadius: 7, padding: 11 },
-  primary: { backgroundColor: theme.colors.lime, padding: 16, borderRadius: 8, alignItems: 'center' }, primaryText: { color: theme.colors.ink, fontSize: 16, fontWeight: '900' }, disabled: { opacity: 0.5 }, partialNote: { color: theme.colors.textSubtle, textAlign: 'center', fontSize: 12 }, summaryCard: { backgroundColor: theme.colors.surface, borderColor: theme.colors.lime, borderWidth: 1, borderRadius: 10, padding: 18, gap: 12 }, summaryLine: { color: theme.colors.text, fontSize: 17, lineHeight: 24, fontWeight: '800' }
+  container: { flex: 1, backgroundColor: theme.colors.background },
+  content: { padding: 18, gap: 14, paddingBottom: 48, maxWidth: 760, width: '100%', alignSelf: 'center' },
+  center: { flex: 1, backgroundColor: theme.colors.background, alignItems: 'center', justifyContent: 'center', gap: 16, padding: 24 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' },
+  kicker: { color: theme.colors.purple, fontSize: 12, fontWeight: '900', letterSpacing: 1 },
+  title: { color: theme.colors.text, fontSize: 28, fontWeight: '900' },
+  counter: { color: theme.colors.ink, backgroundColor: theme.colors.lime, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 999, overflow: 'hidden', fontWeight: '900' },
+  body: { color: theme.colors.textMuted, lineHeight: 21 },
+  focusCard: { backgroundColor: theme.colors.surface, borderColor: theme.colors.lime, borderWidth: 1, borderRadius: 12, padding: 18, gap: 14 },
+  focusTopline: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
+  focusCopy: { flex: 1, gap: 4 },
+  focusKicker: { color: theme.colors.lime, fontSize: 12, fontWeight: '900', letterSpacing: 1 },
+  exerciseName: { color: theme.colors.text, fontSize: 25, fontWeight: '900' },
+  progression: { color: theme.colors.textSoft, fontWeight: '700', textTransform: 'capitalize' },
+  targetBlock: { alignItems: 'center', paddingVertical: 8 },
+  targetLabel: { color: theme.colors.textSubtle, fontSize: 11, fontWeight: '900', letterSpacing: 1 },
+  targetValue: { color: theme.colors.lime, fontSize: 64, lineHeight: 70, fontWeight: '900' },
+  targetUnit: { color: theme.colors.textSoft, fontSize: 16, fontWeight: '800' },
+  minimumCue: { color: theme.colors.purple, fontSize: 13, lineHeight: 18, textAlign: 'center' },
+  cue: { color: theme.colors.textMuted, fontSize: 13, lineHeight: 18, textAlign: 'center' },
+  steppers: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 12 },
+  stepper: { gap: 5 },
+  stepperLabel: { color: theme.colors.textSubtle, fontSize: 11, fontWeight: '800', textTransform: 'uppercase', textAlign: 'center' },
+  stepperControls: { flexDirection: 'row', alignItems: 'center', borderColor: theme.colors.border, borderWidth: 1, borderRadius: 8, overflow: 'hidden' },
+  stepButton: { paddingHorizontal: 17, paddingVertical: 11, backgroundColor: theme.colors.surfaceRaised },
+  stepText: { color: theme.colors.text, fontSize: 22, fontWeight: '900' },
+  stepValue: { color: theme.colors.text, minWidth: 48, textAlign: 'center', fontSize: 17, fontWeight: '900' },
+  notes: { color: theme.colors.text, borderColor: theme.colors.border, borderWidth: 1, borderRadius: 8, padding: 11 },
+  setActions: { flexDirection: 'row', gap: 10 },
+  primarySetButton: { flex: 1, backgroundColor: theme.colors.lime, padding: 16, borderRadius: 8, alignItems: 'center' },
+  secondarySetButton: { borderColor: theme.colors.border, borderWidth: 1, paddingHorizontal: 16, borderRadius: 8, justifyContent: 'center' },
+  secondaryText: { color: theme.colors.textSoft, fontWeight: '900' },
+  skipText: { color: theme.colors.textSubtle, fontSize: 12, fontWeight: '700', padding: 6 },
+  restCard: { alignItems: 'center', borderColor: theme.colors.purple, paddingVertical: 24 },
+  restEnding: { borderColor: theme.colors.lime },
+  restTime: { color: theme.colors.lime, fontSize: 72, lineHeight: 80, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  restExercise: { color: theme.colors.textMuted, textAlign: 'center', lineHeight: 19 },
+  restActions: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 9 },
+  secondaryButton: { borderColor: theme.colors.border, borderWidth: 1, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 11 },
+  readyCard: { borderColor: theme.colors.lime },
+  nextCard: { backgroundColor: theme.colors.surfaceRaised, borderLeftColor: theme.colors.purple, borderLeftWidth: 4, borderRadius: 8, padding: 14, gap: 5 },
+  nextKicker: { color: theme.colors.purple, fontSize: 11, fontWeight: '900', letterSpacing: 1 },
+  nextText: { color: theme.colors.text, fontSize: 15, lineHeight: 21, fontWeight: '800' },
+  sessionMap: { backgroundColor: theme.colors.surface, borderColor: theme.colors.borderMuted, borderWidth: 1, borderRadius: 10, padding: 13, gap: 10 },
+  mapTitle: { color: theme.colors.textSubtle, fontSize: 11, fontWeight: '900', letterSpacing: 1 },
+  mapRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  mapExercise: { color: theme.colors.textSoft, flex: 1, fontSize: 12, fontWeight: '700' },
+  mapSets: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 5 },
+  mapSet: { width: 25, height: 25, borderRadius: 13, alignItems: 'center', justifyContent: 'center', borderColor: theme.colors.border, borderWidth: 1 },
+  mapSetCurrent: { borderColor: theme.colors.purple, borderWidth: 2 },
+  mapSetComplete: { backgroundColor: theme.colors.lime, borderColor: theme.colors.lime },
+  mapSetSkipped: { opacity: 0.35 },
+  mapSetText: { color: theme.colors.textSoft, fontSize: 11, fontWeight: '900' },
+  mapSetTextComplete: { color: theme.colors.ink },
+  footerActions: { gap: 12, alignItems: 'center' },
+  undoText: { color: theme.colors.textSubtle, fontSize: 12, fontWeight: '800', padding: 7 },
+  primary: { width: '100%', backgroundColor: theme.colors.lime, padding: 16, borderRadius: 8, alignItems: 'center' },
+  primaryText: { color: theme.colors.ink, fontSize: 15, fontWeight: '900' },
+  finishEarly: { padding: 11 },
+  finishEarlyText: { color: theme.colors.textSubtle, fontWeight: '800' },
+  disabled: { opacity: 0.5 },
+  partialNote: { color: theme.colors.textSubtle, textAlign: 'center', fontSize: 12 },
+  summaryCard: { backgroundColor: theme.colors.surface, borderColor: theme.colors.lime, borderWidth: 1, borderRadius: 10, padding: 18, gap: 12 },
+  summaryLine: { color: theme.colors.text, fontSize: 17, lineHeight: 24, fontWeight: '800' }
 });
