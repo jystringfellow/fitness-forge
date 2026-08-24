@@ -82,7 +82,15 @@ pnpm dlx eas-cli@latest build --platform ios --profile development
 
 Install the resulting build from its EAS link or QR code and enable Developer Mode on the iPhone if prompted. For normal TypeScript and UI work, run `pnpm dev`, open Fitness Forge Dev, and use Fast Refresh; rebuild the development client only after adding native dependencies or changing native configuration. `pnpm dev:ios` provides the corresponding local Xcode/iOS Simulator path.
 
-The development profile deliberately loads the same EAS production environment and therefore uses the same Supabase project as TestFlight. Sign into the same Fitness Forge account to work with real prescriptions and history. Before switching between Dev and TestFlight, wait for the active installation to show **Backed up**; avoid editing the same workout offline in both installations.
+The development client needs the local Metro server while it is running. For a real workout away from the computer, create a standalone preview instead:
+
+```bash
+pnpm dlx eas-cli@latest build --platform ios --profile preview
+```
+
+The preview embeds the current JavaScript and runs independently without TestFlight or a desktop connection. It uses the same `Fitness Forge Dev` bundle identifier, so installing a preview replaces the development-client installation and vice versa; both remain separate from the production TestFlight app. Create another preview build when you want a newer standalone batch of changes.
+
+The development and preview profiles deliberately load the same EAS production environment and therefore use the same Supabase project as TestFlight. Sign into the same Fitness Forge account to work with real prescriptions and history. Before switching between Dev and TestFlight, wait for the active installation to show **Backed up**; avoid editing the same workout offline in both installations.
 
 ## Optional Supabase backup
 

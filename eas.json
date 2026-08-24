@@ -15,7 +15,11 @@
     },
     "preview": {
       "distribution": "internal",
-      "environment": "preview"
+      "environment": "production",
+      "env": {
+        "APP_VARIANT": "development",
+        "EXPO_PUBLIC_AUTH_SCHEME": "fitnessforge-dev"
+      }
     },
     "production": {
       "autoIncrement": true,
