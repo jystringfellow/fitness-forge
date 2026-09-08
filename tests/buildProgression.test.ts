@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createBuildWorkout, createInitialBuildProfile } from '@/data/buildProgram';
 import { advanceBuildProfile } from '@/lib/buildProgression';
-import { getNextPullupState } from '@/lib/pullupProgression';
+import { getNextPullupState, getUnassistedCheckReadiness } from '@/lib/pullupProgression';
 import { applyPushupAssessment, getNextPushupState, getPushupTargets } from '@/lib/pushupProgression';
 import {
   BuildProfile,
@@ -22,6 +22,7 @@ function pullupState(overrides: Partial<PullupProgressionState> = {}): PullupPro
     assistanceIncrementLb: 5,
     targetReps: [6, 6, 6],
     ceilingConfirmations: 0,
+    successfulSessionsAtCurrentAssistance: 0,
     bestUnassistedReps: 0,
     sessionsCompleted: 0,
     milestoneDates: {},
@@ -130,6 +131,12 @@ test('manual assistance changes recalibrate rather than stacking progression', (
   const easier = getNextPullupState(pullupState(), exercise('pull-up', [6, 6, 6], [6, 6, 6], { assistance: 40, actualAssistance: 45 }), NOW);
   assert.equal(easier.outcome, 'regressed');
   assert.equal(easier.state.currentAssistanceLb, 45);
+});
+
+test('unassisted checks require low relative assistance and two solid sessions', () => {
+  assert.equal(getUnassistedCheckReadiness(pullupState({ currentAssistanceLb: 85, successfulSessionsAtCurrentAssistance: 4 }), 200).ready, false);
+  assert.equal(getUnassistedCheckReadiness(pullupState({ currentAssistanceLb: 50, successfulSessionsAtCurrentAssistance: 1 }), 200).ready, false);
+  assert.equal(getUnassistedCheckReadiness(pullupState({ currentAssistanceLb: 50, successfulSessionsAtCurrentAssistance: 2 }), 200).ready, true);
 });
 
 test('push-up prescriptions use the selected table column with a fluctuating final minimum set', () => {

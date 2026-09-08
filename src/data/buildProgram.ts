@@ -95,17 +95,19 @@ export function createInitialBuildProfile(input: BuildSetupInput, now = new Date
   const pushupBracket = selectPushupBracket(pushupWeek, pushupBaseline);
 
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     active: true,
     createdAt: now,
     updatedAt: now,
     nextTemplateIndex: 0,
+    bodyWeightHistory: input.bodyWeightLb && input.bodyWeightLb > 0 ? [{ weightLb: input.bodyWeightLb, recordedAt: now }] : [],
     pullup: {
       enabled: input.pullupEnabled,
       currentAssistanceLb: assistance,
       assistanceIncrementLb: Math.max(1, input.assistanceIncrementLb),
       targetReps: pullupStart.map((reps) => Math.min(reps, Math.max(1, input.pullupCurrentReps))),
       ceilingConfirmations: 0,
+      successfulSessionsAtCurrentAssistance: 0,
       bestUnassistedReps: assistance === 0 ? Math.max(0, input.pullupCurrentReps) : 0,
       sessionsCompleted: 0,
       milestoneDates: {}

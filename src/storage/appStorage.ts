@@ -28,7 +28,7 @@ export function migrateBuildProfile(value: unknown): BuildProfile | null {
   const profile = value as Record<string, unknown>;
   const pushup = profile.pushup as Record<string, unknown> | undefined;
   if (!pushup) return null;
-  if (profile.schemaVersion === 4 && typeof pushup.programWeek === 'number' && typeof pushup.goalReps === 'number' && profile.rest) return value as BuildProfile;
+  if (profile.schemaVersion === 5 && typeof pushup.programWeek === 'number' && typeof pushup.goalReps === 'number' && Array.isArray(profile.bodyWeightHistory) && profile.rest) return value as BuildProfile;
 
   let migratedPushup = pushup;
   if (typeof pushup.programWeek !== 'number') {
@@ -54,7 +54,14 @@ export function migrateBuildProfile(value: unknown): BuildProfile | null {
 
   return {
     ...(value as Omit<BuildProfile, 'schemaVersion' | 'pushup' | 'rest'>),
-    schemaVersion: 4,
+    schemaVersion: 5,
+    bodyWeightHistory: Array.isArray(profile.bodyWeightHistory) ? profile.bodyWeightHistory : [],
+    pullup: {
+      ...(profile.pullup as BuildProfile['pullup']),
+      successfulSessionsAtCurrentAssistance: typeof (profile.pullup as Record<string, unknown> | undefined)?.successfulSessionsAtCurrentAssistance === 'number'
+        ? (profile.pullup as BuildProfile['pullup']).successfulSessionsAtCurrentAssistance
+        : 0
+    },
     pushup: { ...migratedPushup, goalReps: clampPushupGoal(typeof migratedPushup.goalReps === 'number' ? migratedPushup.goalReps : 50) } as unknown as BuildProfile['pushup'],
     rest: {
       ...DEFAULT_BUILD_REST_PREFERENCES,
@@ -66,7 +73,7 @@ export function migrateBuildProfile(value: unknown): BuildProfile | null {
 export async function loadBuildProfile(): Promise<BuildProfile | null> {
   const stored = await readJson<unknown>(KEYS.profile);
   const migrated = migrateBuildProfile(stored);
-  if (migrated && (stored as { schemaVersion?: number } | null)?.schemaVersion !== 4) {
+  if (migrated && (stored as { schemaVersion?: number } | null)?.schemaVersion !== 5) {
     await Promise.all([
       saveBuildProfile(migrated),
       AsyncStorage.removeItem(KEYS.activeBuildWorkout)
