@@ -32,6 +32,7 @@ function pullupState(overrides: Partial<PullupProgressionState> = {}): PullupPro
 function pushupState(overrides: Partial<PushupProgressionState> = {}): PushupProgressionState {
   return {
     enabled: true,
+    goalReps: 50,
     currentVariation: 'knee',
     baselineMax: 18,
     programWeek: 1,
@@ -242,6 +243,26 @@ test('50 standard push-ups completes the goal without scheduling more volume', (
   assert.equal(update.state.bestStandardReps, 50);
 });
 
+test('a configurable standard push-up goal controls completion', () => {
+  const state = pushupState({ currentVariation: 'standard', assessmentVariation: 'standard', assessmentDue: true, goalReps: 75 });
+  const short = applyPushupAssessment(state, exercise('assessment', [0], [62], { variation: 'standard' }), NOW);
+  assert.equal(short.state.goalCompletedAt, undefined);
+  const complete = applyPushupAssessment(state, exercise('assessment', [0], [75], { variation: 'standard' }), NOW);
+  assert.equal(complete.state.goalCompletedAt, NOW);
+  assert.match(complete.summary, /75 strict standard/);
+});
+
+test('pending assessments stay out of BUILD workouts', () => {
+  const profile = createInitialBuildProfile({
+    pullupEnabled: false, pullupAssistanceLb: 0, pullupCurrentReps: 0, assistanceIncrementLb: 5,
+    pushupEnabled: true, pushupVariation: 'knee', pushupCurrentMax: 62, pushupGoalReps: 80
+  }, NOW);
+  const workout = createBuildWorkout({ ...profile, pushup: { ...profile.pushup, assessmentDue: true, assessmentVariation: 'standard', graduationFrom: 'knee' } }, NOW);
+  assert.equal(workout.exercises.some((item) => item.kind === 'assessment'), false);
+  assert.equal(workout.exercises.some((item) => item.kind === 'push-up'), false);
+  assert.equal(workout.templateId, 'strength-a');
+});
+
 test('workout prescriptions and results preserve planned versus actual context', () => {
   const profile = createInitialBuildProfile({
     pullupEnabled: true,
@@ -320,11 +341,12 @@ test('BUILD prescriptions include exercise-specific rest intervals', () => {
   assert.equal(strengthB.exercises.find((item) => item.exerciseId === 'dumbbell-rdl')?.restSecondsBetweenSets, 60);
   assert.equal(strengthB.exercises.find((item) => item.exerciseId === 'dumbbell-squat-press')?.restSecondsBetweenSets, 60);
 
-  const assessment = createBuildWorkout({
+  const assessmentPending = createBuildWorkout({
     ...profile,
     pushup: { ...profile.pushup, assessmentDue: true, assessmentVariation: 'knee' }
   }, NOW);
-  assert.equal(assessment.exercises.find((item) => item.kind === 'assessment')?.restSecondsBetweenSets, 0);
+  assert.equal(assessmentPending.exercises.some((item) => item.kind === 'assessment'), false);
+  assert.equal(assessmentPending.exercises.some((item) => item.kind === 'push-up'), false);
 });
 
 test('rest preferences override every BUILD category while program push-up rest remains available', () => {

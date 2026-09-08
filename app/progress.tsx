@@ -37,11 +37,11 @@ export default function ProgressScreen() {
       {Object.entries(profile.pullup.milestoneDates).map(([milestone, date]) => <Text key={milestone} style={styles.milestone}>✓ {milestone.replace(/-/g, ' ')} · {new Date(date).toLocaleDateString()}</Text>)}
     </View> : null}
     {profile.pushup.enabled ? <View style={styles.card}>
-      <Text style={styles.cardKicker}>PUSH-UP</Text><Text style={styles.cardTitle}>50 consecutive standard</Text>
-      <Text style={styles.metric}>{profile.pushup.goalCompletedAt ? '50 · complete' : `${profile.pushup.currentVariation} · ${profile.pushup.baselineMax} max`}</Text>
+      <Text style={styles.cardKicker}>PUSH-UP</Text><Text style={styles.cardTitle}>{profile.pushup.goalReps} consecutive standard</Text>
+      <Text style={styles.metric}>{profile.pushup.goalCompletedAt ? `${profile.pushup.goalReps} · complete` : `${profile.pushup.currentVariation} · ${profile.pushup.baselineMax} max`}</Text>
       <Text style={styles.body}>{profile.pushup.assessmentDue ? `${profile.pushup.assessmentVariation} assessment next` : `Week ${profile.pushup.programWeek} · Day ${profile.pushup.programDay} · ${pushupProgram.bracket.label}`}</Text>
-      <View style={styles.track}><View style={[styles.fill, { width: `${Math.min(100, (profile.pushup.bestStandardReps / 50) * 100)}%` }]} /></View>
-      <Text style={styles.path}>Standard max · {profile.pushup.bestStandardReps} / 50</Text>
+      <View style={styles.track}><View style={[styles.fill, { width: `${Math.min(100, (profile.pushup.bestStandardReps / profile.pushup.goalReps) * 100)}%` }]} /></View>
+      <Text style={styles.path}>Standard max · {profile.pushup.bestStandardReps} / {profile.pushup.goalReps}</Text>
       <View style={styles.stats}><View><Text style={styles.statValue}>{profile.pushup.sessionsCompleted}</Text><Text style={styles.statLabel}>sessions</Text></View><View><Text style={styles.statValue}>{profile.pushup.assessments.length}</Text><Text style={styles.statLabel}>assessments</Text></View></View>
       {profile.pushup.assessments.slice().reverse().map((assessment) => <Text key={assessment.id} style={styles.assessment}>{assessment.variation} · {assessment.reps} consecutive · {new Date(assessment.completedAt).toLocaleDateString()}</Text>)}
     </View> : null}

@@ -17,7 +17,7 @@ interface DraftSet {
   targetLoadLb?: number;
   targetAssistanceLb?: number;
   perSide?: boolean;
-  targetType?: 'fixed' | 'minimum';
+  targetType?: 'fixed' | 'minimum' | 'assessment';
   actualReps: number;
   actualLoadLb?: number;
   actualAssistanceLb?: number;
@@ -43,7 +43,7 @@ function makeDraft(workout: BuildWorkoutPrescription): DraftExercise[] {
     notes: '',
     sets: exercise.sets.map((set) => ({
       ...set,
-      actualReps: set.targetReps,
+      actualReps: set.targetType === 'assessment' ? 0 : set.targetReps,
       actualLoadLb: set.targetLoadLb,
       actualAssistanceLb: set.targetAssistanceLb,
       status: 'pending'
@@ -61,6 +61,7 @@ function formatRestTime(seconds: number): string {
 
 function setTarget(exercise: DraftExercise, setIndex: number): string {
   const set = exercise.sets[setIndex];
+  if (set.targetType === 'assessment') return 'Record max reps';
   const reps = `${set.targetReps}${set.targetType === 'minimum' ? '+' : ''}${set.perSide ? ' / side' : ''}`;
   if (set.targetAssistanceLb !== undefined) return `${reps} reps · ${set.targetAssistanceLb} lb assist`;
   if (set.targetLoadLb !== undefined) return `${reps} reps · ${set.targetLoadLb} lb`;
@@ -271,7 +272,7 @@ export default function BuildWorkoutScreen() {
       </View>
     </View> : currentPosition && currentExercise && currentSet ? <View style={styles.focusCard}>
       <View style={styles.focusTopline}><View style={styles.focusCopy}><Text style={styles.focusKicker}>NOW · SET {currentPosition.setIndex + 1} OF {currentExercise.sets.length}</Text><Text style={styles.exerciseName}>{currentExercise.name}</Text><Text style={styles.progression}>{currentExercise.progressionLabel}</Text></View><TouchableOpacity onPress={() => skipRemainingExercise(currentPosition.exerciseIndex)}><Text style={styles.skipText}>{currentPosition.setIndex === 0 ? 'Skip exercise' : 'Skip remaining'}</Text></TouchableOpacity></View>
-      <View style={styles.targetBlock}><Text style={styles.targetLabel}>TARGET</Text><Text style={styles.targetValue}>{currentSet.targetReps}{currentSet.targetType === 'minimum' ? '+' : ''}{currentSet.perSide ? ' / side' : ''}</Text><Text style={styles.targetUnit}>reps{currentSet.targetAssistanceLb !== undefined ? ` · ${currentSet.targetAssistanceLb} lb assistance` : currentSet.targetLoadLb !== undefined ? ` · ${currentSet.targetLoadLb} lb` : ''}</Text></View>
+      <View style={styles.targetBlock}><Text style={styles.targetLabel}>{currentSet.targetType === 'assessment' ? 'ASSESSMENT' : 'TARGET'}</Text><Text style={styles.targetValue}>{currentSet.targetType === 'assessment' ? 'Record max' : `${currentSet.targetReps}${currentSet.targetType === 'minimum' ? '+' : ''}${currentSet.perSide ? ' / side' : ''}`}</Text><Text style={styles.targetUnit}>{currentSet.targetType === 'assessment' ? 'good-form reps' : `reps${currentSet.targetAssistanceLb !== undefined ? ` · ${currentSet.targetAssistanceLb} lb assistance` : currentSet.targetLoadLb !== undefined ? ` · ${currentSet.targetLoadLb} lb` : ''}`}</Text></View>
       {currentSet.targetType === 'minimum' ? <Text style={styles.minimumCue}>Do at least {currentSet.targetReps} excellent reps. Continue only while form stays strong.</Text> : null}
       <Text style={styles.cue}>{currentExercise.cue}</Text>
       <View style={styles.steppers}><Stepper label="Actual reps" value={currentSet.actualReps} onChange={(value) => updateSet(currentPosition.exerciseIndex, currentPosition.setIndex, { actualReps: value })} />{currentSet.actualAssistanceLb !== undefined ? <Stepper label="Assist lb" value={currentSet.actualAssistanceLb} step={profile.pullup.assistanceIncrementLb} onChange={(value) => updateSet(currentPosition.exerciseIndex, currentPosition.setIndex, { actualAssistanceLb: value })} /> : null}{currentSet.actualLoadLb !== undefined ? <Stepper label="Load lb" value={currentSet.actualLoadLb} step={5} onChange={(value) => updateSet(currentPosition.exerciseIndex, currentPosition.setIndex, { actualLoadLb: value })} /> : null}</View>

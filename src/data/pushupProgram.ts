@@ -2,7 +2,8 @@ import { PushupBracketId, PushupProgressionState } from '@/types/build';
 
 export type PushupSetTarget =
   | { type: 'fixed'; reps: number }
-  | { type: 'minimum'; reps: number };
+  | { type: 'minimum'; reps: number }
+  | { type: 'assessment'; reps: number };
 
 export interface PushupBracket {
   id: PushupBracketId;

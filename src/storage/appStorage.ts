@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { DEFAULT_BUILD_REST_PREFERENCES } from '@/data/buildProgram';
+import { clampPushupGoal, DEFAULT_BUILD_REST_PREFERENCES } from '@/data/buildProgram';
 import { getInitialPushupProgramWeek, selectPushupBracket } from '@/data/pushupProgram';
 import { BuildProfile, BuildWorkoutPrescription, WorkoutHistoryEntry } from '@/types/build';
 import { WorkoutPlan } from '@/types/workout';
@@ -28,7 +28,7 @@ export function migrateBuildProfile(value: unknown): BuildProfile | null {
   const profile = value as Record<string, unknown>;
   const pushup = profile.pushup as Record<string, unknown> | undefined;
   if (!pushup) return null;
-  if (profile.schemaVersion === 3 && typeof pushup.programWeek === 'number' && profile.rest) return value as BuildProfile;
+  if (profile.schemaVersion === 4 && typeof pushup.programWeek === 'number' && typeof pushup.goalReps === 'number' && profile.rest) return value as BuildProfile;
 
   let migratedPushup = pushup;
   if (typeof pushup.programWeek !== 'number') {
@@ -54,8 +54,8 @@ export function migrateBuildProfile(value: unknown): BuildProfile | null {
 
   return {
     ...(value as Omit<BuildProfile, 'schemaVersion' | 'pushup' | 'rest'>),
-    schemaVersion: 3,
-    pushup: migratedPushup as unknown as BuildProfile['pushup'],
+    schemaVersion: 4,
+    pushup: { ...migratedPushup, goalReps: clampPushupGoal(typeof migratedPushup.goalReps === 'number' ? migratedPushup.goalReps : 50) } as unknown as BuildProfile['pushup'],
     rest: {
       ...DEFAULT_BUILD_REST_PREFERENCES,
       ...(profile.rest as Partial<BuildProfile['rest']> | undefined)
@@ -66,7 +66,7 @@ export function migrateBuildProfile(value: unknown): BuildProfile | null {
 export async function loadBuildProfile(): Promise<BuildProfile | null> {
   const stored = await readJson<unknown>(KEYS.profile);
   const migrated = migrateBuildProfile(stored);
-  if (migrated && (stored as { schemaVersion?: number } | null)?.schemaVersion !== 3) {
+  if (migrated && (stored as { schemaVersion?: number } | null)?.schemaVersion !== 4) {
     await Promise.all([
       saveBuildProfile(migrated),
       AsyncStorage.removeItem(KEYS.activeBuildWorkout)
@@ -80,8 +80,13 @@ export async function saveBuildProfile(profile: BuildProfile): Promise<void> {
   await markCloudDataDirty();
 }
 
-export function loadActiveBuildWorkout(): Promise<BuildWorkoutPrescription | null> {
-  return readJson<BuildWorkoutPrescription>(KEYS.activeBuildWorkout);
+export async function loadActiveBuildWorkout(): Promise<BuildWorkoutPrescription | null> {
+  const workout = await readJson<BuildWorkoutPrescription>(KEYS.activeBuildWorkout);
+  if (workout?.exercises.some((exercise) => exercise.kind === 'assessment')) {
+    await AsyncStorage.removeItem(KEYS.activeBuildWorkout);
+    return null;
+  }
+  return workout;
 }
 
 export async function saveActiveBuildWorkout(workout: BuildWorkoutPrescription | null): Promise<void> {

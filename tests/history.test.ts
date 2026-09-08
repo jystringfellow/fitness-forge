@@ -41,7 +41,8 @@ test('schema v1 BUILD profiles migrate into the table-driven week and phase mode
     }
   };
   const migrated = migrateBuildProfile(legacy);
-  assert.equal(migrated?.schemaVersion, 3);
+  assert.equal(migrated?.schemaVersion, 4);
+  assert.equal(migrated?.pushup.goalReps, 50);
   assert.equal(migrated?.pushup.programWeek, 2);
   assert.equal(migrated?.pushup.programDay, 3);
   assert.equal(migrated?.pushup.programBracket, '11-20');
@@ -62,7 +63,7 @@ test('schema v2 profiles retain progression while gaining dense rest defaults', 
   }, '2026-01-01T00:00:00.000Z');
   const { rest: _rest, ...withoutRest } = current;
   const migrated = migrateBuildProfile({ ...withoutRest, schemaVersion: 2 });
-  assert.equal(migrated?.schemaVersion, 3);
+  assert.equal(migrated?.schemaVersion, 4);
   assert.equal(migrated?.pushup.programWeek, current.pushup.programWeek);
   assert.equal(migrated?.rest.pullupSeconds, 60);
   assert.equal(migrated?.rest.conditioningSeconds, 45);

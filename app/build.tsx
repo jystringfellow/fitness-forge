@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { createInitialBuildProfile, PUSHUP_VARIATIONS } from '@/data/buildProgram';
+import { clampPushupGoal, createInitialBuildProfile, PUSHUP_VARIATIONS } from '@/data/buildProgram';
 import { getPushupProgramPrescription } from '@/data/pushupProgram';
 import { loadBuildProfile, resetBuildData, saveActiveBuildWorkout, saveBuildProfile } from '@/storage/appStorage';
 import { theme } from '@/theme/brand';
@@ -28,9 +28,11 @@ export default function BuildScreen() {
   const [pushupEnabled, setPushupEnabled] = useState(true);
   const [variation, setVariation] = useState<PushupVariation>('knee');
   const [pushupMax, setPushupMax] = useState('20');
+  const [pushupGoal, setPushupGoal] = useState('50');
+  const [savedGoalDraft, setSavedGoalDraft] = useState('50');
 
   useFocusEffect(useCallback(() => {
-    loadBuildProfile().then((saved) => { setProfile(saved); setLoading(false); }).catch(() => setLoading(false));
+    loadBuildProfile().then((saved) => { setProfile(saved); if (saved) setSavedGoalDraft(String(saved.pushup.goalReps)); setLoading(false); }).catch(() => setLoading(false));
   }, [dataRevision]));
 
   const activate = async () => {
@@ -41,7 +43,8 @@ export default function BuildScreen() {
       assistanceIncrementLb: Number(increment) || 5,
       pushupEnabled,
       pushupVariation: variation,
-      pushupCurrentMax: Number(pushupMax) || 1
+      pushupCurrentMax: Number(pushupMax) || 1,
+      pushupGoalReps: clampPushupGoal(Number(pushupGoal))
     });
     await saveBuildProfile(next);
     setProfile(next);
@@ -55,6 +58,24 @@ export default function BuildScreen() {
     setProfile(next);
   };
 
+  const updatePushupGoal = async () => {
+    if (!profile) return;
+    const goalReps = clampPushupGoal(Number(savedGoalDraft));
+    const now = new Date().toISOString();
+    const next = {
+      ...profile,
+      updatedAt: now,
+      pushup: {
+        ...profile.pushup,
+        goalReps,
+        goalCompletedAt: profile.pushup.bestStandardReps >= goalReps ? profile.pushup.goalCompletedAt ?? now : undefined
+      }
+    };
+    await Promise.all([saveBuildProfile(next), saveActiveBuildWorkout(null)]);
+    setSavedGoalDraft(String(goalReps));
+    setProfile(next);
+  };
+
   if (loading) return <View style={styles.center}><Text style={styles.body}>Loading BUILD…</Text></View>;
 
   if (profile?.active) {
@@ -63,7 +84,7 @@ export default function BuildScreen() {
       <Text style={styles.kicker}>BUILD PROGRAM</Text><Text style={styles.title}>Capability, on purpose.</Text>
       <Text style={styles.body}>Your next workout is already prescribed. Progression remains submaximal and changes only from recorded performance.</Text>
       {profile.pullup.enabled ? <View style={styles.card}><Text style={styles.cardTitle}>First strict pull-up</Text><Text style={styles.metric}>{profile.pullup.currentAssistanceLb === 0 ? `${profile.pullup.bestUnassistedReps} best unassisted` : `${profile.pullup.currentAssistanceLb} lb assistance`}</Text><Text style={styles.body}>Next: {profile.pullup.targetReps.join(' / ')}</Text></View> : null}
-      {profile.pushup.enabled ? <View style={styles.card}><Text style={styles.cardTitle}>50 strict push-ups</Text><Text style={styles.metric}>{profile.pushup.currentVariation} · max {profile.pushup.baselineMax}</Text><Text style={styles.body}>{profile.pushup.goalCompletedAt ? 'Goal complete' : profile.pushup.assessmentDue ? `${profile.pushup.assessmentVariation} assessment next` : `Week ${profile.pushup.programWeek} · Day ${profile.pushup.programDay} · ${pushupProgram.bracket.label}`}</Text></View> : null}
+      {profile.pushup.enabled ? <View style={styles.card}><Text style={styles.cardTitle}>{profile.pushup.goalReps} strict push-ups</Text><Text style={styles.metric}>{profile.pushup.currentVariation} · max {profile.pushup.baselineMax}</Text><Text style={styles.body}>{profile.pushup.goalCompletedAt ? 'Goal complete' : profile.pushup.assessmentDue ? `${profile.pushup.assessmentVariation} assessment next` : `Week ${profile.pushup.programWeek} · Day ${profile.pushup.programDay} · ${pushupProgram.bracket.label}`}</Text><NumberField label="Strict push-up goal (50–100)" value={savedGoalDraft} onChange={setSavedGoalDraft} suffix="reps" /><TouchableOpacity style={styles.secondary} onPress={updatePushupGoal}><Text style={styles.secondaryText}>Update goal</Text></TouchableOpacity></View> : null}
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Rest settings</Text><Text style={styles.body}>Short defaults keep BUILD dense. Add time during a workout whenever form or breathing needs it.</Text>
         <RestChoice label="Pull-up sets" value={profile.rest.pullupSeconds} options={[45, 60, 90].map((value) => ({ label: `${value}s`, value }))} onChange={(pullupSeconds) => updateRest({ pullupSeconds })} />
@@ -85,8 +106,8 @@ export default function BuildScreen() {
       {pullupEnabled ? <><NumberField label="Current assistance" value={assistance} onChange={setAssistance} suffix="lb" /><NumberField label="Current good-form reps" value={pullupReps} onChange={setPullupReps} suffix="reps" /><NumberField label="Assistance step" value={increment} onChange={setIncrement} suffix="lb" /></> : null}
     </View>
     <View style={styles.card}>
-      <View style={styles.toggleRow}><View style={styles.toggleCopy}><Text style={styles.cardTitle}>50 strict push-ups</Text><Text style={styles.body}>Build volume at one variation, assess, then recalibrate.</Text></View><Switch value={pushupEnabled} onValueChange={setPushupEnabled} trackColor={{ true: theme.colors.lime }} /></View>
-      {pushupEnabled ? <><Text style={styles.label}>Starting variation</Text><View style={styles.chipRow}>{PUSHUP_VARIATIONS.map((item) => <TouchableOpacity key={item.id} style={[styles.chip, variation === item.id && styles.chipActive]} onPress={() => setVariation(item.id)}><Text style={[styles.chipText, variation === item.id && styles.chipTextActive]}>{item.label}</Text></TouchableOpacity>)}</View><NumberField label="Current max with good form" value={pushupMax} onChange={setPushupMax} suffix="reps" /></> : null}
+      <View style={styles.toggleRow}><View style={styles.toggleCopy}><Text style={styles.cardTitle}>Strict push-up goal</Text><Text style={styles.body}>Build volume at one variation, assess, then recalibrate.</Text></View><Switch value={pushupEnabled} onValueChange={setPushupEnabled} trackColor={{ true: theme.colors.lime }} /></View>
+      {pushupEnabled ? <><NumberField label="Goal (50–100)" value={pushupGoal} onChange={setPushupGoal} suffix="reps" /><Text style={styles.label}>Starting variation</Text><View style={styles.chipRow}>{PUSHUP_VARIATIONS.map((item) => <TouchableOpacity key={item.id} style={[styles.chip, variation === item.id && styles.chipActive]} onPress={() => setVariation(item.id)}><Text style={[styles.chipText, variation === item.id && styles.chipTextActive]}>{item.label}</Text></TouchableOpacity>)}</View><NumberField label="Current max with good form" value={pushupMax} onChange={setPushupMax} suffix="reps" /></> : null}
     </View>
     <View style={styles.note}><Text style={styles.noteTitle}>Your default week</Text><Text style={styles.body}>Monday · Strength A{`\n`}Wednesday · Strength B{`\n`}Friday · Strength C (lighter lower body before soccer)</Text></View>
     <TouchableOpacity disabled={!pullupEnabled && !pushupEnabled} style={[styles.primary, !pullupEnabled && !pushupEnabled && styles.disabled]} onPress={activate}><Text style={styles.primaryText}>Activate BUILD</Text></TouchableOpacity>
@@ -99,5 +120,5 @@ const styles = StyleSheet.create({
   card: { backgroundColor: theme.colors.surface, borderColor: theme.colors.borderMuted, borderWidth: 1, borderRadius: 10, padding: 16, gap: 13 }, cardTitle: { color: theme.colors.text, fontSize: 18, fontWeight: '900' }, metric: { color: theme.colors.lime, fontSize: 24, fontWeight: '900', textTransform: 'capitalize' },
   toggleRow: { flexDirection: 'row', alignItems: 'center', gap: 14 }, toggleCopy: { flex: 1, gap: 4 }, field: { gap: 7 }, label: { color: theme.colors.textSoft, fontWeight: '800' }, inputRow: { flexDirection: 'row', alignItems: 'center', gap: 8 }, input: { flex: 1, color: theme.colors.text, backgroundColor: theme.colors.surfaceMuted, borderColor: theme.colors.border, borderWidth: 1, borderRadius: 8, padding: 12, fontSize: 18, fontWeight: '800' }, suffix: { color: theme.colors.textMuted, width: 40 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, chip: { borderColor: theme.colors.border, borderWidth: 1, backgroundColor: theme.colors.surfaceMuted, borderRadius: 999, paddingHorizontal: 13, paddingVertical: 10 }, chipActive: { backgroundColor: theme.colors.lime, borderColor: theme.colors.lime }, chipText: { color: theme.colors.textSoft, fontWeight: '800' }, chipTextActive: { color: theme.colors.ink }, restSetting: { gap: 7, paddingTop: 4, borderTopColor: theme.colors.borderMuted, borderTopWidth: 1 }, settingNote: { color: theme.colors.textSubtle, fontSize: 12 },
-  note: { borderLeftColor: theme.colors.purple, borderLeftWidth: 3, padding: 14, backgroundColor: theme.colors.surface, gap: 5 }, noteTitle: { color: theme.colors.text, fontWeight: '900' }, primary: { backgroundColor: theme.colors.lime, padding: 16, borderRadius: 8, alignItems: 'center' }, primaryText: { color: theme.colors.ink, fontSize: 16, fontWeight: '900' }, disabled: { opacity: 0.35 }, reset: { alignItems: 'center', padding: 13 }, resetText: { color: theme.colors.textSubtle, fontWeight: '700' }
+  note: { borderLeftColor: theme.colors.purple, borderLeftWidth: 3, padding: 14, backgroundColor: theme.colors.surface, gap: 5 }, noteTitle: { color: theme.colors.text, fontWeight: '900' }, primary: { backgroundColor: theme.colors.lime, padding: 16, borderRadius: 8, alignItems: 'center' }, primaryText: { color: theme.colors.ink, fontSize: 16, fontWeight: '900' }, secondary: { borderColor: theme.colors.border, borderWidth: 1, borderRadius: 8, padding: 12, alignItems: 'center' }, secondaryText: { color: theme.colors.text, fontWeight: '800' }, disabled: { opacity: 0.35 }, reset: { alignItems: 'center', padding: 13 }, resetText: { color: theme.colors.textSubtle, fontWeight: '700' }
 });
