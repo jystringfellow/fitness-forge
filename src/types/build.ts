@@ -43,6 +43,7 @@ export interface PushupAssessment {
 
 export interface PushupProgressionState {
   enabled: boolean;
+  goalReps: number;
   currentVariation: PushupVariation;
   baselineMax: number;
   programWeek: number;
@@ -73,7 +74,7 @@ export interface BuildRestPreferences {
 }
 
 export interface BuildProfile {
-  schemaVersion: 3;
+  schemaVersion: 4;
   active: boolean;
   createdAt: string;
   updatedAt: string;
@@ -90,7 +91,7 @@ export interface PrescribedSet {
   targetLoadLb?: number;
   targetAssistanceLb?: number;
   perSide?: boolean;
-  targetType?: 'fixed' | 'minimum';
+  targetType?: 'fixed' | 'minimum' | 'assessment';
 }
 
 export interface ExercisePrescription {
@@ -178,6 +179,7 @@ export interface BuildSetupInput {
   pushupEnabled: boolean;
   pushupVariation: PushupVariation;
   pushupCurrentMax: number;
+  pushupGoalReps?: number;
 }
 
 export interface ProgressionUpdate<T> {

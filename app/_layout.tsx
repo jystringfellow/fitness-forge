@@ -35,6 +35,7 @@ export default function RootLayout() {
         <Tabs.Screen name="auth/callback" options={{ href: null, title: 'Confirm Account' }} />
         <Tabs.Screen name="workout" options={{ href: null, title: 'FORGE Workout' }} />
         <Tabs.Screen name="build-workout" options={{ href: null, title: 'BUILD Workout' }} />
+        <Tabs.Screen name="pushup-assessment" options={{ href: null, title: 'Push-Up Check-In' }} />
         <Tabs.Screen name="library" options={{ href: null, title: 'Library' }} />
       </Tabs>
     </AuthProvider>

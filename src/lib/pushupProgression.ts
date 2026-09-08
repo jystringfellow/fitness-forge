@@ -58,7 +58,7 @@ export function applyPushupAssessment(
   };
   const bestStandardReps = variation === 'standard' ? Math.max(state.bestStandardReps, reps) : state.bestStandardReps;
 
-  if (variation === 'standard' && reps >= 50) {
+  if (variation === 'standard' && reps >= state.goalReps) {
     return {
       state: {
         ...state,
@@ -74,7 +74,7 @@ export function applyPushupAssessment(
         goalCompletedAt: completedAt
       },
       outcome: 'completed',
-      summary: '50 strict standard push-ups achieved. Capability goal complete.'
+      summary: `${state.goalReps} strict standard push-ups achieved. Capability goal complete.`
     };
   }
 
@@ -97,7 +97,7 @@ export function applyPushupAssessment(
     sessionsCompleted: state.sessionsCompleted + 1
   };
 
-  const threshold = variation === 'standard' ? 50 : GRADUATION_MAX[variation];
+  const threshold = variation === 'standard' ? state.goalReps : GRADUATION_MAX[variation];
   const harder = nextVariation(variation);
   if (harder && reps >= threshold) {
     return {

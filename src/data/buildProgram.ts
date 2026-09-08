@@ -61,6 +61,10 @@ export const DEFAULT_BUILD_REST_PREFERENCES: BuildProfile['rest'] = {
   conditioningSeconds: 45
 };
 
+export function clampPushupGoal(value: number): number {
+  return Number.isFinite(value) ? Math.min(100, Math.max(50, Math.round(value))) : 50;
+}
+
 const DEFAULT_ACCESSORY_LOADS: Record<string, number> = {
   'dumbbell-single-leg-rdl': 15,
   'kettlebell-swing': 25,
@@ -91,7 +95,7 @@ export function createInitialBuildProfile(input: BuildSetupInput, now = new Date
   const pushupBracket = selectPushupBracket(pushupWeek, pushupBaseline);
 
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     active: true,
     createdAt: now,
     updatedAt: now,
@@ -108,6 +112,7 @@ export function createInitialBuildProfile(input: BuildSetupInput, now = new Date
     },
     pushup: {
       enabled: input.pushupEnabled,
+      goalReps: clampPushupGoal(input.pushupGoalReps ?? 50),
       currentVariation: input.pushupVariation,
       baselineMax: pushupBaseline,
       programWeek: pushupWeek,
@@ -125,7 +130,7 @@ export function createInitialBuildProfile(input: BuildSetupInput, now = new Date
       }] : [],
       bestStandardReps: input.pushupVariation === 'standard' ? Math.max(0, input.pushupCurrentMax) : 0,
       sessionsCompleted: 0,
-      goalCompletedAt: input.pushupVariation === 'standard' && input.pushupCurrentMax >= 50 ? now : undefined
+      goalCompletedAt: input.pushupVariation === 'standard' && input.pushupCurrentMax >= clampPushupGoal(input.pushupGoalReps ?? 50) ? now : undefined
     },
     accessories: Object.fromEntries(
       Object.entries(DEFAULT_ACCESSORY_LOADS).map(([id, loadLb]) => [id, { loadLb, successfulSessions: 0 }])
@@ -155,26 +160,21 @@ export function createBuildWorkout(profile: BuildProfile, now = new Date().toISO
     });
   }
 
-  if (profile.pushup.enabled && !profile.pushup.goalCompletedAt) {
-    const assessment = profile.pushup.assessmentDue;
-    const variation = assessment ? profile.pushup.assessmentVariation : profile.pushup.currentVariation;
+  if (profile.pushup.enabled && !profile.pushup.goalCompletedAt && !profile.pushup.assessmentDue) {
+    const variation = profile.pushup.currentVariation;
     const program = getPushupProgramPrescription(profile.pushup);
-    const targets: Array<number | PushupSetTarget> = assessment
-      ? [{ type: 'minimum', reps: Math.max(1, profile.pushup.baselineMax) }]
-      : program.sets;
+    const targets: Array<number | PushupSetTarget> = program.sets;
     exercises.push({
       id: `${workoutId}-pushup`,
       exerciseId: `${variation}-push-up`,
-      name: `${PUSHUP_VARIATIONS.find((item) => item.id === variation)?.label ?? variation} Push-Up${assessment ? ' Assessment' : ''}`,
-      kind: assessment ? 'assessment' : 'push-up',
+      name: `${PUSHUP_VARIATIONS.find((item) => item.id === variation)?.label ?? variation} Push-Up`,
+      kind: 'push-up',
       variation,
       sets: makeSets(`${workoutId}-pushup`, targets),
-      cue: assessment ? 'One maximum set of strict, good-form reps. Stop when form changes.' : 'Keep a rigid body line and leave a little in reserve.',
-      progressionLabel: assessment ? 'Maximum consecutive good-form reps' : `Week ${program.week} · Day ${program.day} · ${program.bracket.label}`,
+      cue: 'Keep a rigid body line and leave a little in reserve.',
+      progressionLabel: `Week ${program.week} · Day ${program.day} · ${program.bracket.label}`,
       equipment: variation === 'incline' ? ['bodyweight', 'step-platform'] : ['bodyweight'],
-      restSecondsBetweenSets: assessment
-        ? 0
-        : profile.rest.pushupMode === 'program'
+      restSecondsBetweenSets: profile.rest.pushupMode === 'program'
           ? program.restSeconds
           : profile.rest.pushupSeconds,
       programContext: {

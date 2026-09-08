@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { Href, useFocusEffect, useRouter } from 'expo-router';
 import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { createBuildWorkout } from '@/data/buildProgram';
 import { loadActiveBuildWorkout, loadBuildProfile, loadWorkoutHistory, saveActiveBuildWorkout } from '@/storage/appStorage';
@@ -8,6 +8,7 @@ import { useAuth } from '@/auth/AuthProvider';
 import { BuildProfile, BuildWorkoutPrescription, BuildWorkoutResult } from '@/types/build';
 
 function setSummary(exercise: BuildWorkoutPrescription['exercises'][number]): string {
+  if (exercise.kind === 'assessment') return 'Record maximum good-form reps';
   const reps = exercise.sets.map((set) => `${set.targetReps}${set.targetType === 'minimum' ? '+' : ''}`).join(' / ');
   const first = exercise.sets[0];
   if (first?.targetAssistanceLb !== undefined) return `${reps} · ${first.targetAssistanceLb} lb assistance`;
@@ -100,6 +101,14 @@ export default function TodayScreen() {
       </View>
       <Text style={styles.body}>Your next scheduled session is ready. Missed days do not create debt—continue when you can.</Text>
 
+      {profile.pushup.assessmentDue ? <View style={styles.assessmentCard}>
+        <Text style={styles.assessmentKicker}>PUSH-UP CHECK-IN DUE</Text>
+        <Text style={styles.cardTitle}>{profile.pushup.assessmentVariation === 'standard' ? 'Standard' : profile.pushup.assessmentVariation} push-up assessment</Text>
+        <Text style={styles.body}>Do this separately from BUILD, ideally over the weekend or on another recovered day. Your result will set the next push-up prescription.</Text>
+        <Text style={styles.progression}>Previous {profile.pushup.currentVariation} max · {profile.pushup.baselineMax}</Text>
+        <TouchableOpacity accessibilityRole="button" style={styles.secondary} onPress={() => router.push('/pushup-assessment' as Href)}><Text style={styles.secondaryText}>START CHECK-IN</Text></TouchableOpacity>
+      </View> : null}
+
       {workout.exercises.map((exercise) => (
         <View key={exercise.id} style={styles.exerciseCard}>
           <View style={styles.exerciseTopline}>
@@ -149,6 +158,8 @@ const styles = StyleSheet.create({
   todayHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, paddingVertical: 8 },
   buildBadge: { color: theme.colors.ink, backgroundColor: theme.colors.lime, borderRadius: 999, overflow: 'hidden', paddingHorizontal: 10, paddingVertical: 6, fontWeight: '900', fontSize: 12 },
   exerciseCard: { backgroundColor: theme.colors.surface, borderColor: theme.colors.borderMuted, borderWidth: 1, borderRadius: 10, padding: 16, gap: 7 },
+  assessmentCard: { backgroundColor: theme.colors.surfaceRaised, borderColor: theme.colors.purple, borderWidth: 1, borderRadius: 10, padding: 16, gap: 9 },
+  assessmentKicker: { color: theme.colors.purple, fontSize: 11, fontWeight: '900', letterSpacing: 1 },
   exerciseTopline: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
   exerciseName: { color: theme.colors.text, fontSize: 18, fontWeight: '900', flex: 1 },
   optional: { color: theme.colors.textSubtle, fontSize: 10, fontWeight: '900' },
