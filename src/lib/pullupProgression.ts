@@ -2,6 +2,13 @@ import { CompletedExercise, ProgressionUpdate, PullupProgressionState } from '@/
 
 const ASSISTED_FLOOR = 6;
 const ASSISTED_CEILING = 10;
+const UNASSISTED_CHECK_MAX_ASSISTANCE_RATIO = 0.3;
+
+export function getUnassistedCheckReadiness(state: PullupProgressionState, bodyWeightLb?: number): { ready: boolean; assistanceRatio?: number } {
+  if (!bodyWeightLb || bodyWeightLb <= 0 || state.currentAssistanceLb <= 0) return { ready: false };
+  const assistanceRatio = state.currentAssistanceLb / bodyWeightLb;
+  return { ready: assistanceRatio <= UNASSISTED_CHECK_MAX_ASSISTANCE_RATIO && state.successfulSessionsAtCurrentAssistance >= 2, assistanceRatio };
+}
 
 function completedSets(exercise: CompletedExercise) {
   return exercise.completedSets.filter((set) => set.status === 'completed');
@@ -56,7 +63,8 @@ export function getNextPullupState(
     ...state,
     bestUnassistedReps: bestUnassisted,
     milestoneDates,
-    sessionsCompleted: state.sessionsCompleted + 1
+    sessionsCompleted: state.sessionsCompleted + 1,
+    successfulSessionsAtCurrentAssistance: success && !changedAssistance ? state.successfulSessionsAtCurrentAssistance + 1 : 0
   };
 
   if (!allRecorded || misses === 1) {
@@ -68,7 +76,8 @@ export function getNextPullupState(
       state: {
         ...baseState,
         targetReps: regressTargets(state.targetReps, state.currentAssistanceLb === 0 ? 1 : Math.min(ASSISTED_FLOOR, ...state.targetReps)),
-        ceilingConfirmations: 0
+        ceilingConfirmations: 0,
+        successfulSessionsAtCurrentAssistance: 0
       },
       outcome: 'regressed',
       summary: 'Pull-up volume eased slightly for the next session.'
@@ -83,7 +92,8 @@ export function getNextPullupState(
         ...baseState,
         currentAssistanceLb: Math.max(0, actualAssistance),
         targetReps: actualAssistance === 0 ? [1, 1, 1] : [resetReps, resetReps, resetReps],
-        ceilingConfirmations: 0
+        ceilingConfirmations: 0,
+        successfulSessionsAtCurrentAssistance: 0
       },
       outcome: harder ? 'graduated' : 'regressed',
       summary: `${Math.max(0, actualAssistance)} lb assistance recorded; the next target recalibrates conservatively.`
@@ -122,7 +132,8 @@ export function getNextPullupState(
       ...baseState,
       currentAssistanceLb: nextAssistance,
       targetReps: nextAssistance === 0 ? [1, 1, 1] : [ASSISTED_FLOOR, ASSISTED_FLOOR, ASSISTED_FLOOR],
-      ceilingConfirmations: 0
+      ceilingConfirmations: 0,
+      successfulSessionsAtCurrentAssistance: 0
     },
     outcome: 'graduated',
     summary: nextAssistance === 0

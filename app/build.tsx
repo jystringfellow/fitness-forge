@@ -7,6 +7,7 @@ import { loadBuildProfile, resetBuildData, saveActiveBuildWorkout, saveBuildProf
 import { theme } from '@/theme/brand';
 import { BuildProfile, PushupVariation } from '@/types/build';
 import { useAuth } from '@/auth/AuthProvider';
+import { getUnassistedCheckReadiness } from '@/lib/pullupProgression';
 
 function NumberField({ label, value, onChange, suffix }: { label: string; value: string; onChange: (value: string) => void; suffix?: string }) {
   return <View style={styles.field}><Text style={styles.label}>{label}</Text><View style={styles.inputRow}><TextInput accessibilityLabel={label} style={styles.input} value={value} onChangeText={(text) => onChange(text.replace(/[^0-9]/g, ''))} keyboardType="number-pad" /><Text style={styles.suffix}>{suffix}</Text></View></View>;
@@ -25,6 +26,8 @@ export default function BuildScreen() {
   const [assistance, setAssistance] = useState('40');
   const [pullupReps, setPullupReps] = useState('10');
   const [increment, setIncrement] = useState('5');
+  const [bodyWeight, setBodyWeight] = useState('');
+  const [savedWeightDraft, setSavedWeightDraft] = useState('');
   const [pushupEnabled, setPushupEnabled] = useState(true);
   const [variation, setVariation] = useState<PushupVariation>('knee');
   const [pushupMax, setPushupMax] = useState('20');
@@ -32,7 +35,7 @@ export default function BuildScreen() {
   const [savedGoalDraft, setSavedGoalDraft] = useState('50');
 
   useFocusEffect(useCallback(() => {
-    loadBuildProfile().then((saved) => { setProfile(saved); if (saved) setSavedGoalDraft(String(saved.pushup.goalReps)); setLoading(false); }).catch(() => setLoading(false));
+    loadBuildProfile().then((saved) => { setProfile(saved); if (saved) { setSavedGoalDraft(String(saved.pushup.goalReps)); setSavedWeightDraft(String(saved.bodyWeightHistory.at(-1)?.weightLb ?? '')); } setLoading(false); }).catch(() => setLoading(false));
   }, [dataRevision]));
 
   const activate = async () => {
@@ -41,6 +44,7 @@ export default function BuildScreen() {
       pullupAssistanceLb: Number(assistance) || 0,
       pullupCurrentReps: Number(pullupReps) || 1,
       assistanceIncrementLb: Number(increment) || 5,
+      bodyWeightLb: Number(bodyWeight) || undefined,
       pushupEnabled,
       pushupVariation: variation,
       pushupCurrentMax: Number(pushupMax) || 1,
@@ -76,14 +80,23 @@ export default function BuildScreen() {
     setProfile(next);
   };
 
+  const recordBodyWeight = async () => {
+    if (!profile || Number(savedWeightDraft) <= 0) return;
+    const now = new Date().toISOString();
+    const next = { ...profile, updatedAt: now, bodyWeightHistory: [...profile.bodyWeightHistory, { weightLb: Number(savedWeightDraft), recordedAt: now }] };
+    await saveBuildProfile(next);
+    setProfile(next);
+  };
+
   if (loading) return <View style={styles.center}><Text style={styles.body}>Loading BUILD…</Text></View>;
 
   if (profile?.active) {
     const pushupProgram = getPushupProgramPrescription(profile.pushup);
+    const readiness = getUnassistedCheckReadiness(profile.pullup, profile.bodyWeightHistory.at(-1)?.weightLb);
     return <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.kicker}>BUILD PROGRAM</Text><Text style={styles.title}>Capability, on purpose.</Text>
       <Text style={styles.body}>Your next workout is already prescribed. Progression remains submaximal and changes only from recorded performance.</Text>
-      {profile.pullup.enabled ? <View style={styles.card}><Text style={styles.cardTitle}>First strict pull-up</Text><Text style={styles.metric}>{profile.pullup.currentAssistanceLb === 0 ? `${profile.pullup.bestUnassistedReps} best unassisted` : `${profile.pullup.currentAssistanceLb} lb assistance`}</Text><Text style={styles.body}>Next: {profile.pullup.targetReps.join(' / ')}</Text></View> : null}
+      {profile.pullup.enabled ? <View style={styles.card}><Text style={styles.cardTitle}>First strict pull-up</Text><Text style={styles.metric}>{profile.pullup.currentAssistanceLb === 0 ? `${profile.pullup.bestUnassistedReps} best unassisted` : `${profile.pullup.currentAssistanceLb} lb assistance`}</Text><Text style={styles.body}>Next: {profile.pullup.targetReps.join(' / ')}</Text>{readiness.ready ? <Text style={styles.ready}>You may be ready to try one optional unassisted rep while fresh.</Text> : null}<NumberField label="Current body weight (optional)" value={savedWeightDraft} onChange={setSavedWeightDraft} suffix="lb" /><TouchableOpacity style={styles.secondary} onPress={recordBodyWeight}><Text style={styles.secondaryText}>Record weight</Text></TouchableOpacity></View> : null}
       {profile.pushup.enabled ? <View style={styles.card}><Text style={styles.cardTitle}>{profile.pushup.goalReps} strict push-ups</Text><Text style={styles.metric}>{profile.pushup.currentVariation} · max {profile.pushup.baselineMax}</Text><Text style={styles.body}>{profile.pushup.goalCompletedAt ? 'Goal complete' : profile.pushup.assessmentDue ? `${profile.pushup.assessmentVariation} assessment next` : `Week ${profile.pushup.programWeek} · Day ${profile.pushup.programDay} · ${pushupProgram.bracket.label}`}</Text><NumberField label="Strict push-up goal (50–100)" value={savedGoalDraft} onChange={setSavedGoalDraft} suffix="reps" /><TouchableOpacity style={styles.secondary} onPress={updatePushupGoal}><Text style={styles.secondaryText}>Update goal</Text></TouchableOpacity></View> : null}
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Rest settings</Text><Text style={styles.body}>Short defaults keep BUILD dense. Add time during a workout whenever form or breathing needs it.</Text>
@@ -103,7 +116,7 @@ export default function BuildScreen() {
     <Text style={styles.body}>Choose only the baselines needed to make your first prescription. You can deliberately start below your maximum variation.</Text>
     <View style={styles.card}>
       <View style={styles.toggleRow}><View style={styles.toggleCopy}><Text style={styles.cardTitle}>First strict pull-up</Text><Text style={styles.body}>Reduce assistance gradually, then build unassisted reps.</Text></View><Switch value={pullupEnabled} onValueChange={setPullupEnabled} trackColor={{ true: theme.colors.lime }} /></View>
-      {pullupEnabled ? <><NumberField label="Current assistance" value={assistance} onChange={setAssistance} suffix="lb" /><NumberField label="Current good-form reps" value={pullupReps} onChange={setPullupReps} suffix="reps" /><NumberField label="Assistance step" value={increment} onChange={setIncrement} suffix="lb" /></> : null}
+      {pullupEnabled ? <><NumberField label="Body weight (optional)" value={bodyWeight} onChange={setBodyWeight} suffix="lb" /><NumberField label="Current assistance" value={assistance} onChange={setAssistance} suffix="lb" /><NumberField label="Current good-form reps" value={pullupReps} onChange={setPullupReps} suffix="reps" /><NumberField label="Assistance step" value={increment} onChange={setIncrement} suffix="lb" /></> : null}
     </View>
     <View style={styles.card}>
       <View style={styles.toggleRow}><View style={styles.toggleCopy}><Text style={styles.cardTitle}>Strict push-up goal</Text><Text style={styles.body}>Build volume at one variation, assess, then recalibrate.</Text></View><Switch value={pushupEnabled} onValueChange={setPushupEnabled} trackColor={{ true: theme.colors.lime }} /></View>
@@ -120,5 +133,5 @@ const styles = StyleSheet.create({
   card: { backgroundColor: theme.colors.surface, borderColor: theme.colors.borderMuted, borderWidth: 1, borderRadius: 10, padding: 16, gap: 13 }, cardTitle: { color: theme.colors.text, fontSize: 18, fontWeight: '900' }, metric: { color: theme.colors.lime, fontSize: 24, fontWeight: '900', textTransform: 'capitalize' },
   toggleRow: { flexDirection: 'row', alignItems: 'center', gap: 14 }, toggleCopy: { flex: 1, gap: 4 }, field: { gap: 7 }, label: { color: theme.colors.textSoft, fontWeight: '800' }, inputRow: { flexDirection: 'row', alignItems: 'center', gap: 8 }, input: { flex: 1, color: theme.colors.text, backgroundColor: theme.colors.surfaceMuted, borderColor: theme.colors.border, borderWidth: 1, borderRadius: 8, padding: 12, fontSize: 18, fontWeight: '800' }, suffix: { color: theme.colors.textMuted, width: 40 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, chip: { borderColor: theme.colors.border, borderWidth: 1, backgroundColor: theme.colors.surfaceMuted, borderRadius: 999, paddingHorizontal: 13, paddingVertical: 10 }, chipActive: { backgroundColor: theme.colors.lime, borderColor: theme.colors.lime }, chipText: { color: theme.colors.textSoft, fontWeight: '800' }, chipTextActive: { color: theme.colors.ink }, restSetting: { gap: 7, paddingTop: 4, borderTopColor: theme.colors.borderMuted, borderTopWidth: 1 }, settingNote: { color: theme.colors.textSubtle, fontSize: 12 },
-  note: { borderLeftColor: theme.colors.purple, borderLeftWidth: 3, padding: 14, backgroundColor: theme.colors.surface, gap: 5 }, noteTitle: { color: theme.colors.text, fontWeight: '900' }, primary: { backgroundColor: theme.colors.lime, padding: 16, borderRadius: 8, alignItems: 'center' }, primaryText: { color: theme.colors.ink, fontSize: 16, fontWeight: '900' }, secondary: { borderColor: theme.colors.border, borderWidth: 1, borderRadius: 8, padding: 12, alignItems: 'center' }, secondaryText: { color: theme.colors.text, fontWeight: '800' }, disabled: { opacity: 0.35 }, reset: { alignItems: 'center', padding: 13 }, resetText: { color: theme.colors.textSubtle, fontWeight: '700' }
+  note: { borderLeftColor: theme.colors.purple, borderLeftWidth: 3, padding: 14, backgroundColor: theme.colors.surface, gap: 5 }, noteTitle: { color: theme.colors.text, fontWeight: '900' }, ready: { color: theme.colors.lime, fontWeight: '800', lineHeight: 20 }, primary: { backgroundColor: theme.colors.lime, padding: 16, borderRadius: 8, alignItems: 'center' }, primaryText: { color: theme.colors.ink, fontSize: 16, fontWeight: '900' }, secondary: { borderColor: theme.colors.border, borderWidth: 1, borderRadius: 8, padding: 12, alignItems: 'center' }, secondaryText: { color: theme.colors.text, fontWeight: '800' }, disabled: { opacity: 0.35 }, reset: { alignItems: 'center', padding: 13 }, resetText: { color: theme.colors.textSubtle, fontWeight: '700' }
 });

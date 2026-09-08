@@ -27,9 +27,15 @@ export interface PullupProgressionState {
   assistanceIncrementLb: number;
   targetReps: number[];
   ceilingConfirmations: number;
+  successfulSessionsAtCurrentAssistance: number;
   bestUnassistedReps: number;
   sessionsCompleted: number;
   milestoneDates: Partial<Record<'first-unassisted' | 'three-unassisted' | 'five-unassisted' | 'ten-unassisted', string>>;
+}
+
+export interface BodyWeightEntry {
+  weightLb: number;
+  recordedAt: string;
 }
 
 export interface PushupAssessment {
@@ -74,11 +80,12 @@ export interface BuildRestPreferences {
 }
 
 export interface BuildProfile {
-  schemaVersion: 4;
+  schemaVersion: 5;
   active: boolean;
   createdAt: string;
   updatedAt: string;
   nextTemplateIndex: number;
+  bodyWeightHistory: BodyWeightEntry[];
   pullup: PullupProgressionState;
   pushup: PushupProgressionState;
   accessories: Record<string, AccessoryState>;
@@ -176,6 +183,7 @@ export interface BuildSetupInput {
   pullupAssistanceLb: number;
   pullupCurrentReps: number;
   assistanceIncrementLb: number;
+  bodyWeightLb?: number;
   pushupEnabled: boolean;
   pushupVariation: PushupVariation;
   pushupCurrentMax: number;
