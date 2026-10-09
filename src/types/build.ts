@@ -48,6 +48,8 @@ export interface PushupAssessment {
 }
 
 export interface PushupProgressionState {
+  lastSuccessfulProgramPosition?: { week: number; day: number; bracket: PushupBracketId };
+  maintenanceSessionsSinceCheckIn?: number;
   enabled: boolean;
   goalReps: number;
   currentVariation: PushupVariation;

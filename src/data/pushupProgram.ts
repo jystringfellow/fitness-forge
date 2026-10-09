@@ -1,4 +1,4 @@
-import { PushupBracketId, PushupProgressionState } from '@/types/build';
+import { CompletedExercise, PushupBracketId, PushupProgressionState } from '@/types/build';
 
 export type PushupSetTarget =
   | { type: 'fixed'; reps: number }
@@ -121,20 +121,29 @@ export function getInitialPushupProgramWeek(assessedMax: number): 1 | 3 {
 }
 
 export function isContinuingPushupTraining(state: PushupProgressionState): boolean {
-  return state.currentVariation === 'standard' && (state.bestStandardReps >= 50 || state.baselineMax >= 50 || Boolean(state.goalCompletedAt));
+  return state.currentVariation === 'standard' && (state.bestStandardReps >= state.goalReps || Boolean(state.goalCompletedAt));
 }
 
-// Continue with the challenge's five-set day rather than its eight/nine-set days.
-// A new max check-in selects the column; changing a goal alone does not prove capacity.
+export function getCompletedPushupProgramPosition(exercise: CompletedExercise): PushupProgressionState['lastSuccessfulProgramPosition'] {
+  if (exercise.skipped || exercise.prescribedSets.length !== 5 || exercise.completedSets.length !== 5
+    || !exercise.completedSets.every((set) => set.status === 'completed' && set.actualReps >= set.targetReps)) return undefined;
+  const matches = PUSHUP_PROGRAM.flatMap((week) => week.days.flatMap((day) => day.columns.flatMap((column, index) =>
+    column.length === 5 && column.every((reps, setIndex) => reps === exercise.prescribedSets[setIndex].targetReps)
+      ? [{ week: week.week, day: day.day, bracket: week.brackets[index].id }] : [])));
+  return matches.find((position) => position.week === exercise.programContext?.week && position.day === exercise.programContext?.day) ?? matches[0];
+}
+
+// Maintenance repeats demonstrated table volume; an unfinished goal uses the
+// original challenge sequence, including its later eight/nine-set sessions.
 export function getBuildPushupPrescription(state: PushupProgressionState): PushupProgramPrescription {
   if (!isContinuingPushupTraining(state)) {
     return getPushupProgramPrescription(state.assessmentDue && state.programWeek >= 5 ? { ...state, programDay: 1 } : state);
   }
-  return getPushupProgramPrescription({
-    programWeek: state.baselineMax >= 46 ? 6 : state.baselineMax >= 31 ? 5 : getInitialPushupProgramWeek(state.baselineMax),
-    programDay: 1,
-    baselineMax: state.baselineMax
-  });
+  const anchor = state.lastSuccessfulProgramPosition;
+  const program = getPushupProgramPrescription(anchor ? {
+    ...state, programWeek: anchor.week, programDay: anchor.day, programBracket: anchor.bracket
+  } : state);
+  return program.sets.length === 5 ? program : getPushupProgramPrescription({ ...state, programDay: 1 });
 }
 
 export function getPushupWeek(week: number): PushupProgramWeekData {
@@ -148,11 +157,11 @@ export function selectPushupBracket(week: number, assessedMax: number): PushupBr
 }
 
 export function getPushupProgramPrescription(
-  state: Pick<PushupProgressionState, 'programWeek' | 'programDay' | 'baselineMax'>
+  state: Pick<PushupProgressionState, 'programWeek' | 'programDay' | 'baselineMax'> & Partial<Pick<PushupProgressionState, 'programBracket'>>
 ): PushupProgramPrescription {
   const week = getPushupWeek(state.programWeek);
   const day = week.days.find((item) => item.day === state.programDay) ?? week.days[0];
-  const bracket = selectPushupBracket(week.week, state.baselineMax);
+  const bracket = week.brackets.find((item) => item.id === state.programBracket) ?? selectPushupBracket(week.week, state.baselineMax);
   const bracketIndex = week.brackets.findIndex((item) => item.id === bracket.id);
   const reps = day.columns[bracketIndex];
   return {

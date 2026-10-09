@@ -175,7 +175,7 @@ test('completed push-up goals keep five challenge sets, including while a check-
   for (let session = 0; session < 7; session += 1) {
     const workout = createBuildWorkout({ ...profile, pushup: state }, NOW);
     const pushup = workout.exercises.find((item) => item.kind === 'push-up');
-    assert.deepEqual(pushup?.sets.map((set) => set.targetReps), [25, 30, 20, 15, 40]);
+    assert.deepEqual(pushup?.sets.map((set) => set.targetReps), [14, 18, 14, 14, 20]);
     assert.equal(pushup?.sets.at(-1)?.targetType, 'minimum');
     const targets = getPushupTargets(state);
     state = getNextPushupState(state, exercise('push-up', targets, targets, { variation: 'standard' }), NOW).state;

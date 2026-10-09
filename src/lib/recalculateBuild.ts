@@ -1,4 +1,4 @@
-import { getBuildPushupPrescription } from '@/data/pushupProgram';
+import { getBuildPushupPrescription, getCompletedPushupProgramPosition } from '@/data/pushupProgram';
 import { getNextPullupState } from '@/lib/pullupProgression';
 import { recognizeStandardPushupPerformance } from '@/lib/pushupProgression';
 import { BuildProfile, BuildWorkoutResult, CompletedExercise, WorkoutHistoryEntry } from '@/types/build';
@@ -54,8 +54,15 @@ export function recalculateBuildFromHistory(profile: BuildProfile, history: Work
       pushup = { ...pushup, baselineMax: Math.max(pushup.baselineMax, latestAssessment.reps) };
     }
     const latestAssessmentAt = Math.max(0, ...pushup.assessments.map((item) => Date.parse(item.completedAt)).filter(Number.isFinite));
+    let provenPosition = pushup.lastSuccessfulProgramPosition;
+    let latestTrainingPosition: typeof provenPosition;
     for (const result of results) {
       for (const exercise of result.exercises.filter((item) => item.kind === 'push-up' || item.kind === 'assessment')) {
+        if ((exercise.variation ?? pushup.currentVariation) === pushup.currentVariation && exercise.kind === 'push-up') {
+          const position = getCompletedPushupProgramPosition(exercise);
+          latestTrainingPosition = position;
+          if (position) provenPosition = position;
+        }
         if (Date.parse(result.completedAt) >= latestAssessmentAt) pushup = recognizeStandardPushupPerformance(pushup, exercise, result.completedAt);
       }
     }
@@ -64,6 +71,15 @@ export function recalculateBuildFromHistory(profile: BuildProfile, history: Work
     const completionDate = pushup.assessments.find((item) => item.variation === 'standard' && item.reps >= pushup.goalReps)?.completedAt ?? profile.updatedAt;
     pushup = { ...pushup, bestStandardReps,
       goalCompletedAt: bestStandardReps >= pushup.goalReps ? pushup.goalCompletedAt ?? completionDate : undefined };
+    if (provenPosition) {
+      pushup = { ...pushup, lastSuccessfulProgramPosition: provenPosition };
+      if (latestTrainingPosition) {
+        pushup = { ...pushup, programWeek: latestTrainingPosition.week, programDay: latestTrainingPosition.day, programBracket: latestTrainingPosition.bracket };
+      }
+      if (latestTrainingPosition && pushup.currentVariation === 'standard' && bestStandardReps >= 50) {
+        pushup = { ...pushup, assessmentDue: false, assessmentReason: undefined, nextProgramWeekAfterAssessment: undefined };
+      }
+    }
     next = { ...next, pushup };
     const sets = getBuildPushupPrescription(pushup).sets;
     summary.push(`Push-ups: ${sets.map((set) => `${set.reps}${set.type === 'minimum' ? '+' : ''}`).join(' / ')} · ${pushup.currentVariation}.`,

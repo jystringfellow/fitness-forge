@@ -38,7 +38,7 @@ test('stored completed profiles recover five-set training and stale Today prescr
   context.mock.method(AsyncStorage, 'setItem', async (key: string, value: string) => { values.set(key, value); });
   context.mock.method(AsyncStorage, 'removeItem', async (key: string) => { values.delete(key); });
   const repaired = await loadBuildProfile();
-  assert.equal(repaired?.pushup.programWeek, 6);
+  assert.equal(repaired?.pushup.programWeek, 3);
   assert.equal(repaired?.pushup.goalCompletedAt, now);
 
   // A cached workout may also arrive from another device or a prior app version.

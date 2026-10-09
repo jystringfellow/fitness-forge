@@ -71,11 +71,9 @@ export default function BuildScreen() {
     if (!profile) return;
     const goalReps = clampPushupGoal(Number(savedGoalDraft));
     const now = new Date().toISOString();
-    const next = {
-      ...profile,
-      updatedAt: now,
-      pushup: changePushupGoal(profile.pushup, goalReps, now)
-    };
+    const changed = { ...profile, updatedAt: now, pushup: changePushupGoal(profile.pushup, goalReps, now) };
+    const recalculated = recalculateBuildFromHistory(changed, await loadWorkoutHistory(), now);
+    const next = { ...changed, pushup: recalculated.profile.pushup };
     await Promise.all([saveBuildProfile(next), saveActiveBuildWorkout(null)]);
     setSavedGoalDraft(String(goalReps));
     setProfile(next);
