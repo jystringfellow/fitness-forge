@@ -86,31 +86,36 @@ export function getNextPullupState(
 
   if (changedAssistance) {
     const harder = actualAssistance < state.currentAssistanceLb;
-    const resetReps = Math.max(1, Math.min(ASSISTED_FLOOR, ...sets.map((set) => set.actualReps)));
+    const targetReps = sets.map((set) => Math.max(1, Math.min(actualAssistance === 0 ? Infinity : ASSISTED_CEILING, set.actualReps)));
+    const atCeiling = actualAssistance > 0 && targetReps.every((reps) => reps >= ASSISTED_CEILING);
     return {
       state: {
         ...baseState,
         currentAssistanceLb: Math.max(0, actualAssistance),
-        targetReps: actualAssistance === 0 ? [1, 1, 1] : [resetReps, resetReps, resetReps],
-        ceilingConfirmations: 0,
-        successfulSessionsAtCurrentAssistance: 0
+        targetReps,
+        ceilingConfirmations: atCeiling ? 1 : 0,
+        successfulSessionsAtCurrentAssistance: 1
       },
       outcome: harder ? 'graduated' : 'regressed',
-      summary: `${Math.max(0, actualAssistance)} lb assistance recorded; the next target recalibrates conservatively.`
+      summary: `${Math.max(0, actualAssistance)} lb assistance recorded; next targets match your completed ${targetReps.join(' / ')}.${atCeiling ? ' Confirm 10 / 10 / 10 once more before reducing assistance.' : ''}`
     };
   }
 
   if (state.currentAssistanceLb === 0) {
+    const actualTargets = sets.map((set) => set.actualReps);
+    const exceeded = actualTargets.some((reps, index) => reps > state.targetReps[index]);
+    const targetReps = exceeded ? actualTargets : progressUnassisted(actualTargets);
     return {
-      state: { ...baseState, targetReps: progressUnassisted(state.targetReps) },
+      state: { ...baseState, targetReps },
       outcome: 'progressed',
-      summary: `Next pull-up target: ${progressUnassisted(state.targetReps).join(' / ')} unassisted.`
+      summary: `Next pull-up target: ${targetReps.join(' / ')} unassisted.`
     };
   }
 
-  const atCeiling = state.targetReps.every((target) => target >= ASSISTED_CEILING);
+  const actualTargets = sets.map((set) => Math.min(ASSISTED_CEILING, set.actualReps));
+  const atCeiling = actualTargets.every((target) => target >= ASSISTED_CEILING);
   if (!atCeiling) {
-    const targetReps = progressDistributed(state.targetReps);
+    const targetReps = progressDistributed(actualTargets);
     return {
       state: { ...baseState, targetReps, ceilingConfirmations: 0 },
       outcome: 'progressed',
@@ -120,7 +125,7 @@ export function getNextPullupState(
 
   if (state.ceilingConfirmations < 1) {
     return {
-      state: { ...baseState, ceilingConfirmations: 1 },
+      state: { ...baseState, targetReps: actualTargets, ceilingConfirmations: 1 },
       outcome: 'repeated',
       summary: 'Pull-up ceiling reached once; confirm it once more before reducing assistance.'
     };

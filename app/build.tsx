@@ -2,12 +2,13 @@ import { useCallback, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { clampPushupGoal, createInitialBuildProfile, PUSHUP_VARIATIONS } from '@/data/buildProgram';
-import { getPushupProgramPrescription } from '@/data/pushupProgram';
+import { getBuildPushupPrescription, isContinuingPushupTraining } from '@/data/pushupProgram';
 import { loadBuildProfile, resetBuildData, saveActiveBuildWorkout, saveBuildProfile } from '@/storage/appStorage';
 import { theme } from '@/theme/brand';
 import { BuildProfile, PushupVariation } from '@/types/build';
 import { useAuth } from '@/auth/AuthProvider';
 import { getUnassistedCheckReadiness } from '@/lib/pullupProgression';
+import { updatePushupGoal as changePushupGoal } from '@/lib/pushupProgression';
 
 function NumberField({ label, value, onChange, suffix }: { label: string; value: string; onChange: (value: string) => void; suffix?: string }) {
   return <View style={styles.field}><Text style={styles.label}>{label}</Text><View style={styles.inputRow}><TextInput accessibilityLabel={label} style={styles.input} value={value} onChangeText={(text) => onChange(text.replace(/[^0-9]/g, ''))} keyboardType="number-pad" /><Text style={styles.suffix}>{suffix}</Text></View></View>;
@@ -69,11 +70,7 @@ export default function BuildScreen() {
     const next = {
       ...profile,
       updatedAt: now,
-      pushup: {
-        ...profile.pushup,
-        goalReps,
-        goalCompletedAt: profile.pushup.bestStandardReps >= goalReps ? profile.pushup.goalCompletedAt ?? now : undefined
-      }
+      pushup: changePushupGoal(profile.pushup, goalReps, now)
     };
     await Promise.all([saveBuildProfile(next), saveActiveBuildWorkout(null)]);
     setSavedGoalDraft(String(goalReps));
@@ -91,13 +88,13 @@ export default function BuildScreen() {
   if (loading) return <View style={styles.center}><Text style={styles.body}>Loading BUILD…</Text></View>;
 
   if (profile?.active) {
-    const pushupProgram = getPushupProgramPrescription(profile.pushup);
+    const pushupProgram = getBuildPushupPrescription(profile.pushup);
     const readiness = getUnassistedCheckReadiness(profile.pullup, profile.bodyWeightHistory.at(-1)?.weightLb);
     return <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.kicker}>BUILD PROGRAM</Text><Text style={styles.title}>Capability, on purpose.</Text>
       <Text style={styles.body}>Your next workout is already prescribed. Progression remains submaximal and changes only from recorded performance.</Text>
       {profile.pullup.enabled ? <View style={styles.card}><Text style={styles.cardTitle}>First strict pull-up</Text><Text style={styles.metric}>{profile.pullup.currentAssistanceLb === 0 ? `${profile.pullup.bestUnassistedReps} best unassisted` : `${profile.pullup.currentAssistanceLb} lb assistance`}</Text><Text style={styles.body}>Next: {profile.pullup.targetReps.join(' / ')}</Text>{readiness.ready ? <Text style={styles.ready}>You may be ready to try one optional unassisted rep while fresh.</Text> : null}<NumberField label="Current body weight (optional)" value={savedWeightDraft} onChange={setSavedWeightDraft} suffix="lb" /><TouchableOpacity style={styles.secondary} onPress={recordBodyWeight}><Text style={styles.secondaryText}>Record weight</Text></TouchableOpacity></View> : null}
-      {profile.pushup.enabled ? <View style={styles.card}><Text style={styles.cardTitle}>{profile.pushup.goalReps} strict push-ups</Text><Text style={styles.metric}>{profile.pushup.currentVariation} · max {profile.pushup.baselineMax}</Text><Text style={styles.body}>{profile.pushup.goalCompletedAt ? 'Goal complete' : profile.pushup.assessmentDue ? `${profile.pushup.assessmentVariation} assessment next` : `Week ${profile.pushup.programWeek} · Day ${profile.pushup.programDay} · ${pushupProgram.bracket.label}`}</Text><NumberField label="Strict push-up goal (50–100)" value={savedGoalDraft} onChange={setSavedGoalDraft} suffix="reps" /><TouchableOpacity style={styles.secondary} onPress={updatePushupGoal}><Text style={styles.secondaryText}>Update goal</Text></TouchableOpacity></View> : null}
+      {profile.pushup.enabled ? <View style={styles.card}><Text style={styles.cardTitle}>{profile.pushup.goalReps} strict push-ups</Text><Text style={styles.metric}>{profile.pushup.currentVariation} · max {profile.pushup.baselineMax}</Text><Text style={styles.body}>{isContinuingPushupTraining(profile.pushup) ? `Five-set ${profile.pushup.goalCompletedAt ? 'maintenance · goal complete' : 'goal training'}` : profile.pushup.assessmentDue ? `${profile.pushup.assessmentVariation} assessment next` : `Week ${profile.pushup.programWeek} · Day ${profile.pushup.programDay} · ${pushupProgram.bracket.label}`}</Text><NumberField label="Strict push-up goal (50–100)" value={savedGoalDraft} onChange={setSavedGoalDraft} suffix="reps" /><TouchableOpacity style={styles.secondary} onPress={updatePushupGoal}><Text style={styles.secondaryText}>Update goal</Text></TouchableOpacity></View> : null}
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Rest settings</Text><Text style={styles.body}>Short defaults keep BUILD dense. Add time during a workout whenever form or breathing needs it.</Text>
         <RestChoice label="Pull-up sets" value={profile.rest.pullupSeconds} options={[45, 60, 90].map((value) => ({ label: `${value}s`, value }))} onChange={(pullupSeconds) => updateRest({ pullupSeconds })} />

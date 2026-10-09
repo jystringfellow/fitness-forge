@@ -7,7 +7,7 @@ import {
   PrescribedSet,
   PushupVariation
 } from '@/types/build';
-import { getInitialPushupProgramWeek, getPushupProgramPrescription, PushupSetTarget, selectPushupBracket } from '@/data/pushupProgram';
+import { getInitialPushupProgramWeek, getBuildPushupPrescription, isContinuingPushupTraining, PushupSetTarget, selectPushupBracket } from '@/data/pushupProgram';
 
 export const PUSHUP_VARIATIONS: Array<{ id: PushupVariation; label: string }> = [
   { id: 'wall', label: 'Wall' },
@@ -162,9 +162,9 @@ export function createBuildWorkout(profile: BuildProfile, now = new Date().toISO
     });
   }
 
-  if (profile.pushup.enabled && !profile.pushup.goalCompletedAt && !profile.pushup.assessmentDue) {
+  if (profile.pushup.enabled && (!profile.pushup.assessmentDue || isContinuingPushupTraining(profile.pushup))) {
     const variation = profile.pushup.currentVariation;
-    const program = getPushupProgramPrescription(profile.pushup);
+    const program = getBuildPushupPrescription(profile.pushup);
     const targets: Array<number | PushupSetTarget> = program.sets;
     exercises.push({
       id: `${workoutId}-pushup`,
@@ -174,7 +174,9 @@ export function createBuildWorkout(profile: BuildProfile, now = new Date().toISO
       variation,
       sets: makeSets(`${workoutId}-pushup`, targets),
       cue: 'Keep a rigid body line and leave a little in reserve.',
-      progressionLabel: `Week ${program.week} · Day ${program.day} · ${program.bracket.label}`,
+      progressionLabel: isContinuingPushupTraining(profile.pushup)
+        ? `Five-set ${profile.pushup.goalCompletedAt ? 'maintenance' : 'goal training'} · ${profile.pushup.goalReps} consecutive goal · ${program.bracket.label}`
+        : `Week ${program.week} · Day ${program.day} · ${program.bracket.label}`,
       equipment: variation === 'incline' ? ['bodyweight', 'step-platform'] : ['bodyweight'],
       restSecondsBetweenSets: profile.rest.pushupMode === 'program'
           ? program.restSeconds
