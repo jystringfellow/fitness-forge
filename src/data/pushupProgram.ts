@@ -121,13 +121,15 @@ export function getInitialPushupProgramWeek(assessedMax: number): 1 | 3 {
 }
 
 export function isContinuingPushupTraining(state: PushupProgressionState): boolean {
-  return state.currentVariation === 'standard' && (state.baselineMax >= 50 || Boolean(state.goalCompletedAt));
+  return state.currentVariation === 'standard' && (state.bestStandardReps >= 50 || state.baselineMax >= 50 || Boolean(state.goalCompletedAt));
 }
 
 // Continue with the challenge's five-set day rather than its eight/nine-set days.
 // A new max check-in selects the column; changing a goal alone does not prove capacity.
 export function getBuildPushupPrescription(state: PushupProgressionState): PushupProgramPrescription {
-  if (!isContinuingPushupTraining(state)) return getPushupProgramPrescription(state);
+  if (!isContinuingPushupTraining(state)) {
+    return getPushupProgramPrescription(state.assessmentDue && state.programWeek >= 5 ? { ...state, programDay: 1 } : state);
+  }
   return getPushupProgramPrescription({
     programWeek: state.baselineMax >= 46 ? 6 : state.baselineMax >= 31 ? 5 : getInitialPushupProgramWeek(state.baselineMax),
     programDay: 1,

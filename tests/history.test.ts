@@ -1,10 +1,26 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { loadActiveBuildWorkout, loadBuildProfile, migrateBuildProfile, prependUniqueHistory, STORAGE_KEYS } from '@/storage/appStorage';
+import { loadActiveBuildWorkout, loadBuildProfile, migrateBuildProfile, prependUniqueHistory, saveRecalculatedBuild, STORAGE_KEYS } from '@/storage/appStorage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createBuildWorkout, createInitialBuildProfile } from '@/data/buildProgram';
 import { updatePushupGoal } from '@/lib/pushupProgression';
 import { WorkoutHistoryEntry } from '@/types/build';
+
+test('applying recalculation saves profile and Today together without writing history', async (context) => {
+  const writes: Array<[string, string]> = [];
+  context.mock.method(AsyncStorage, 'multiSet', async (values: Array<[string, string]>) => { writes.push(...values); });
+  context.mock.method(AsyncStorage, 'setItem', async () => {});
+  const profile = createInitialBuildProfile({
+    pullupEnabled: true, pullupAssistanceLb: 70, pullupCurrentReps: 6, assistanceIncrementLb: 5,
+    pushupEnabled: true, pushupVariation: 'standard', pushupCurrentMax: 50
+  });
+  await saveRecalculatedBuild(profile);
+  assert.deepEqual(writes.map(([key]) => key), [STORAGE_KEYS.profile, STORAGE_KEYS.activeBuildWorkout]);
+  assert.deepEqual(JSON.parse(writes[0][1]), JSON.parse(JSON.stringify(profile)));
+  const workout = JSON.parse(writes[1][1]);
+  assert.equal(workout.exercises.find((exercise: { kind: string }) => exercise.kind === 'push-up').sets.length, 5);
+  assert.equal(workout.exercises.find((exercise: { kind: string }) => exercise.kind === 'pull-up').sets[0].targetAssistanceLb, 70);
+});
 
 test('stored completed profiles recover five-set training and stale Today prescriptions refresh', async (context) => {
   const now = '2026-10-09T12:00:00.000Z';
