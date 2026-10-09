@@ -1,6 +1,7 @@
 import {
   getInitialPushupProgramWeek,
-  getPushupProgramPrescription,
+  getBuildPushupPrescription,
+  isContinuingPushupTraining,
   getPushupWeek,
   previousPushupProgramPosition,
   PUSHUP_REASSESSMENT_WEEKS,
@@ -21,7 +22,16 @@ const GRADUATION_MAX: Record<Exclude<PushupVariation, 'standard'>, number> = {
 };
 
 export function getPushupTargets(state: PushupProgressionState): number[] {
-  return getPushupProgramPrescription(state).sets.map((set) => set.reps);
+  return getBuildPushupPrescription(state).sets.map((set) => set.reps);
+}
+
+export function updatePushupGoal(state: PushupProgressionState, goalReps: number, now: string): PushupProgressionState {
+  const next = { ...state, goalReps, goalCompletedAt: state.bestStandardReps >= goalReps ? state.goalCompletedAt ?? now : undefined };
+  if (isContinuingPushupTraining(state)) {
+    return { ...next, programWeek: 6, programDay: 1, programBracket: selectPushupBracket(6, state.baselineMax).id,
+      assessmentDue: false, assessmentReason: undefined, nextProgramWeekAfterAssessment: undefined, graduationFrom: undefined };
+  }
+  return next;
 }
 
 function nextVariation(variation: PushupVariation): PushupVariation | null {
@@ -64,6 +74,9 @@ export function applyPushupAssessment(
         ...state,
         currentVariation: 'standard',
         baselineMax: reps,
+        programWeek: 6,
+        programDay: 1,
+        programBracket: selectPushupBracket(6, reps).id,
         assessmentDue: false,
         assessmentReason: undefined,
         nextProgramWeekAfterAssessment: undefined,
@@ -74,11 +87,11 @@ export function applyPushupAssessment(
         goalCompletedAt: completedAt
       },
       outcome: 'completed',
-      summary: `${state.goalReps} strict standard push-ups achieved. Capability goal complete.`
+      summary: `${state.goalReps} strict standard push-ups achieved. Continue five-set challenge training to maintain your capacity.`
     };
   }
 
-  const programWeek = assessedProgramWeek(state, reps, isGraduationAssessment);
+  const programWeek = variation === 'standard' && reps >= 50 ? 6 : assessedProgramWeek(state, reps, isGraduationAssessment);
   const bracket = selectPushupBracket(programWeek, reps);
   const assessedState: PushupProgressionState = {
     ...state,
@@ -141,6 +154,19 @@ export function getNextPushupState(
 
   if (exercise.skipped || missedTargets === 1) {
     return { state: base, outcome: 'repeated', summary: `Push-up Week ${state.programWeek}, Day ${state.programDay} will repeat.` };
+  }
+
+  if (isContinuingPushupTraining(state)) {
+    const cycleComplete = state.programDay >= 3;
+    return {
+      state: { ...base, programDay: missedTargets > 0 ? state.programDay : cycleComplete ? 1 : state.programDay + 1,
+        assessmentDue: state.assessmentDue || (missedTargets === 0 && cycleComplete),
+        assessmentVariation: 'standard', assessmentReason: 'final' },
+      outcome: missedTargets > 0 ? 'repeated' : 'progressed',
+      summary: missedTargets > 0 ? 'Repeat the five-set push-up targets until every set is solid.'
+        : cycleComplete ? 'Five-set training continues. A separate max check-in is available to recalibrate your targets.'
+          : 'Continue five-set push-up challenge training; your achieved goal stays recorded.'
+    };
   }
 
   if (missedTargets > 1) {

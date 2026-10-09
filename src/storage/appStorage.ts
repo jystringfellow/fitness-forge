@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { clampPushupGoal, DEFAULT_BUILD_REST_PREFERENCES } from '@/data/buildProgram';
+import { clampPushupGoal, createBuildWorkout, DEFAULT_BUILD_REST_PREFERENCES } from '@/data/buildProgram';
+import { updatePushupGoal } from '@/lib/pushupProgression';
 import { getInitialPushupProgramWeek, selectPushupBracket } from '@/data/pushupProgram';
 import { BuildProfile, BuildWorkoutPrescription, WorkoutHistoryEntry } from '@/types/build';
 import { WorkoutPlan } from '@/types/workout';
@@ -72,8 +73,12 @@ export function migrateBuildProfile(value: unknown): BuildProfile | null {
 
 export async function loadBuildProfile(): Promise<BuildProfile | null> {
   const stored = await readJson<unknown>(KEYS.profile);
-  const migrated = migrateBuildProfile(stored);
-  if (migrated && (stored as { schemaVersion?: number } | null)?.schemaVersion !== 5) {
+  let migrated = migrateBuildProfile(stored);
+  const completedNeedsRepair = migrated?.pushup.goalCompletedAt && migrated.pushup.programWeek !== 6;
+  if (migrated && completedNeedsRepair) {
+    migrated = { ...migrated, pushup: updatePushupGoal(migrated.pushup, migrated.pushup.goalReps, migrated.updatedAt) };
+  }
+  if (migrated && ((stored as { schemaVersion?: number } | null)?.schemaVersion !== 5 || completedNeedsRepair)) {
     await Promise.all([
       saveBuildProfile(migrated),
       AsyncStorage.removeItem(KEYS.activeBuildWorkout)
@@ -92,6 +97,16 @@ export async function loadActiveBuildWorkout(): Promise<BuildWorkoutPrescription
   if (workout?.exercises.some((exercise) => exercise.kind === 'assessment')) {
     await AsyncStorage.removeItem(KEYS.activeBuildWorkout);
     return null;
+  }
+  if (workout) {
+    const profile = await loadBuildProfile();
+    if (profile?.active) {
+      const current = createBuildWorkout(profile, workout.createdAt);
+      if (JSON.stringify(current) !== JSON.stringify(workout)) {
+        await saveActiveBuildWorkout(current);
+        return current;
+      }
+    }
   }
   return workout;
 }

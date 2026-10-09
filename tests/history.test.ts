@@ -1,8 +1,41 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { migrateBuildProfile, prependUniqueHistory } from '@/storage/appStorage';
-import { createInitialBuildProfile } from '@/data/buildProgram';
+import { loadActiveBuildWorkout, loadBuildProfile, migrateBuildProfile, prependUniqueHistory, STORAGE_KEYS } from '@/storage/appStorage';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { createBuildWorkout, createInitialBuildProfile } from '@/data/buildProgram';
+import { updatePushupGoal } from '@/lib/pushupProgression';
 import { WorkoutHistoryEntry } from '@/types/build';
+
+test('stored completed profiles recover five-set training and stale Today prescriptions refresh', async (context) => {
+  const now = '2026-10-09T12:00:00.000Z';
+  const profile = createInitialBuildProfile({
+    pullupEnabled: true, pullupAssistanceLb: 40, pullupCurrentReps: 6, assistanceIncrementLb: 5,
+    pushupEnabled: true, pushupVariation: 'standard', pushupCurrentMax: 50
+  }, now);
+  const oldWorkout = createBuildWorkout(profile, now);
+  oldWorkout.exercises = oldWorkout.exercises.filter((exercise) => exercise.kind !== 'push-up');
+  const values = new Map<string, string>([
+    [STORAGE_KEYS.profile, JSON.stringify(profile)],
+    [STORAGE_KEYS.activeBuildWorkout, JSON.stringify(oldWorkout)]
+  ]);
+  context.mock.method(AsyncStorage, 'getItem', async (key: string) => values.get(key) ?? null);
+  context.mock.method(AsyncStorage, 'setItem', async (key: string, value: string) => { values.set(key, value); });
+  context.mock.method(AsyncStorage, 'removeItem', async (key: string) => { values.delete(key); });
+  const repaired = await loadBuildProfile();
+  assert.equal(repaired?.pushup.programWeek, 6);
+  assert.equal(repaired?.pushup.goalCompletedAt, now);
+
+  // A cached workout may also arrive from another device or a prior app version.
+  values.set(STORAGE_KEYS.activeBuildWorkout, JSON.stringify(oldWorkout));
+  const changed = { ...repaired!, pushup: updatePushupGoal(repaired!.pushup, 70, now),
+    pullup: { ...profile.pullup, targetReps: [10, 10, 10] } };
+  values.set(STORAGE_KEYS.profile, JSON.stringify(changed));
+  const refreshed = await loadActiveBuildWorkout();
+  assert.equal(refreshed?.exercises.find((exercise) => exercise.kind === 'push-up')?.sets.length, 5);
+  assert.match(refreshed?.exercises.find((exercise) => exercise.kind === 'push-up')?.progressionLabel ?? '', /70 consecutive goal/);
+  assert.deepEqual(refreshed?.exercises.find((exercise) => exercise.kind === 'pull-up')?.sets.map((set) => set.targetReps), [10, 10, 10]);
+  assert.equal(values.get(STORAGE_KEYS.activeBuildWorkout), JSON.stringify(refreshed));
+});
 
 test('unified history preserves BUILD and FORGE source distinctions and prevents duplicate completion', () => {
   const build: WorkoutHistoryEntry = {

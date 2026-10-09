@@ -3,7 +3,7 @@ import test from 'node:test';
 import { createBuildWorkout, createInitialBuildProfile } from '@/data/buildProgram';
 import { advanceBuildProfile } from '@/lib/buildProgression';
 import { getNextPullupState, getUnassistedCheckReadiness } from '@/lib/pullupProgression';
-import { applyPushupAssessment, getNextPushupState, getPushupTargets } from '@/lib/pushupProgression';
+import { applyPushupAssessment, getNextPushupState, getPushupTargets, updatePushupGoal } from '@/lib/pushupProgression';
 import {
   BuildProfile,
   BuildWorkoutResult,
@@ -78,9 +78,9 @@ function exercise(
   };
 }
 
-test('pull-ups distribute one additional rep after an exact or exceeded target', () => {
+test('pull-ups distribute one additional rep from actual completed reps', () => {
   assert.deepEqual(getNextPullupState(pullupState(), exercise('pull-up', [6, 6, 6], [6, 6, 6], { assistance: 40 }), NOW).state.targetReps, [7, 6, 6]);
-  assert.deepEqual(getNextPullupState(pullupState(), exercise('pull-up', [6, 6, 6], [8, 7, 6], { assistance: 40 }), NOW).state.targetReps, [7, 6, 6]);
+  assert.deepEqual(getNextPullupState(pullupState(), exercise('pull-up', [6, 6, 6], [8, 7, 6], { assistance: 40 }), NOW).state.targetReps, [8, 7, 7]);
 });
 
 test('one missed or skipped pull-up set repeats the prescription', () => {
@@ -131,6 +131,71 @@ test('manual assistance changes recalibrate rather than stacking progression', (
   const easier = getNextPullupState(pullupState(), exercise('pull-up', [6, 6, 6], [6, 6, 6], { assistance: 40, actualAssistance: 45 }), NOW);
   assert.equal(easier.outcome, 'regressed');
   assert.equal(easier.state.currentAssistanceLb, 45);
+});
+
+test('logged 10/10/10 reaches the ceiling even from a lower prescription', () => {
+  const first = getNextPullupState(pullupState(), exercise('pull-up', [6, 6, 6], [10, 10, 10], { assistance: 40 }), NOW);
+  assert.deepEqual(first.state.targetReps, [10, 10, 10]);
+  assert.equal(first.state.ceilingConfirmations, 1);
+  const second = getNextPullupState(first.state, exercise('pull-up', [10, 10, 10], [10, 10, 10], { assistance: 40 }), NOW);
+  assert.equal(second.state.currentAssistanceLb, 35);
+  assert.deepEqual(second.state.targetReps, [6, 6, 6]);
+});
+
+test('logging 10/10/10 after dropping assistance preserves proven capacity', () => {
+  const first = getNextPullupState(pullupState(), exercise('pull-up', [6, 6, 6], [10, 10, 10], { assistance: 40, actualAssistance: 35 }), NOW);
+  assert.equal(first.state.currentAssistanceLb, 35);
+  assert.deepEqual(first.state.targetReps, [10, 10, 10]);
+  assert.equal(first.state.ceilingConfirmations, 1);
+  const second = getNextPullupState(first.state, exercise('pull-up', [10, 10, 10], [10, 10, 10], { assistance: 35 }), NOW);
+  assert.equal(second.state.currentAssistanceLb, 30);
+});
+
+test('unassisted performance above singles becomes the next prescription', () => {
+  for (const assistance of [0, 5]) {
+    const update = getNextPullupState(pullupState({ currentAssistanceLb: assistance, targetReps: [1, 1, 1] }),
+      exercise('pull-up', [1, 1, 1], [10, 10, 10], { assistance, actualAssistance: 0 }), NOW);
+    assert.deepEqual(update.state.targetReps, [10, 10, 10]);
+    assert.equal(update.state.bestUnassistedReps, 10);
+  }
+});
+
+test('a skipped set cannot use surplus reps to trigger an assistance reduction', () => {
+  const update = getNextPullupState(pullupState(), exercise('pull-up', [6, 6, 6], [10, 10, 'skip'], { assistance: 40 }), NOW);
+  assert.equal(update.state.currentAssistanceLb, 40);
+  assert.deepEqual(update.state.targetReps, [6, 6, 6]);
+});
+
+test('completed push-up goals keep five challenge sets, including while a check-in is due', () => {
+  const profile = createInitialBuildProfile({
+    pullupEnabled: false, pullupAssistanceLb: 0, pullupCurrentReps: 0, assistanceIncrementLb: 5,
+    pushupEnabled: true, pushupVariation: 'standard', pushupCurrentMax: 50
+  }, NOW);
+  let state = applyPushupAssessment(profile.pushup, exercise('assessment', [0], [50], { variation: 'standard' }), NOW).state;
+  for (let session = 0; session < 7; session += 1) {
+    const workout = createBuildWorkout({ ...profile, pushup: state }, NOW);
+    const pushup = workout.exercises.find((item) => item.kind === 'push-up');
+    assert.deepEqual(pushup?.sets.map((set) => set.targetReps), [25, 30, 20, 15, 40]);
+    assert.equal(pushup?.sets.at(-1)?.targetType, 'minimum');
+    const targets = getPushupTargets(state);
+    state = getNextPushupState(state, exercise('push-up', targets, targets, { variation: 'standard' }), NOW).state;
+    assert.equal(state.goalCompletedAt, NOW);
+    if (session >= 2) assert.equal(state.assessmentDue, true);
+  }
+});
+
+test('raising a completed goal clears stale check-ins and resumes five-set goal training', () => {
+  const profile = createInitialBuildProfile({
+    pullupEnabled: false, pullupAssistanceLb: 0, pullupCurrentReps: 0, assistanceIncrementLb: 5,
+    pushupEnabled: true, pushupVariation: 'standard', pushupCurrentMax: 50
+  }, NOW);
+  const state = updatePushupGoal({ ...profile.pushup, assessmentDue: true, assessmentReason: 'final' }, 70, NOW);
+  assert.equal(state.goalCompletedAt, undefined);
+  assert.equal(state.assessmentDue, false);
+  assert.equal(state.bestStandardReps, 50);
+  const workout = createBuildWorkout({ ...profile, pushup: state }, NOW);
+  assert.equal(workout.exercises.find((item) => item.kind === 'push-up')?.sets.length, 5);
+  assert.match(workout.exercises.find((item) => item.kind === 'push-up')?.progressionLabel ?? '', /70 consecutive goal/);
 });
 
 test('unassisted checks require low relative assistance and two solid sessions', () => {
@@ -242,7 +307,7 @@ test('knee graduation schedules a standard assessment and recalibrates from its 
   assert.equal(standard.state.assessmentDue, false);
 });
 
-test('50 standard push-ups completes the goal without scheduling more volume', () => {
+test('50 standard push-ups completes the goal and starts continued training', () => {
   const state = pushupState({ currentVariation: 'standard', assessmentVariation: 'standard', assessmentDue: true });
   const update = applyPushupAssessment(state, exercise('assessment', [40], [50], { variation: 'standard' }), NOW);
   assert.equal(update.outcome, 'completed');

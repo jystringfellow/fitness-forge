@@ -11,6 +11,7 @@ BUILD answers “What should I do today to slowly get better?” It provides a M
 The first two capabilities are:
 
 - First strict pull-up: build assisted volume, confirm the top rep target twice, reduce assistance, recalibrate, then accumulate unassisted reps.
+- Pull-up targets use completed reps. Logging 10/10/10 counts as a ceiling confirmation even when fewer reps were prescribed; a manual assistance change preserves demonstrated reps and requires another ceiling confirmation before reducing assistance again.
 - 50 consecutive strict push-ups: follow a table-driven six-week program at wall, incline, knee, or standard push-ups; reassess between phases; and recalibrate after graduating to a harder variation.
 
 FORGE answers “Give me a good workout today.” It preserves the existing randomized generator, including time, focus, energy, attachment selection, cardio/plyometric work, interval timing, spoken transitions, and optional finishers.
@@ -51,6 +52,8 @@ The algorithms favor repeatable training:
 - Push-up assessments occur after Weeks 2, 4, 5, and 6. The result selects the next phase bracket; an insufficient result repeats the prior week without punishment.
 
 The push-up table contains 18 sessions. Weeks 1–4 prescribe five sets, Weeks 5–6 include selected eight- and nine-set days, and every final set is an `N+` minimum rather than a fixed stopping point. Program week/day/bracket and movement variation are stored independently, so graduating to a harder variation always starts with a new assessment and bracket recalibration. Assessments of 20 reps or fewer enter Week 1; higher starting assessments enter Week 3. Weeks 5 and 6 remain reassessment-gated.
+
+After achieving a standard push-up goal or recording a standard max of at least 50, BUILD continues with the challenge's five-set Day 1 column selected from the recorded max. Every three successful sessions offers a separate check-in; training continues while it is pending. Updating the goal refreshes Today, clears the pending check-in for continued training, and preserves the recorded max. A higher goal alone does not increase reps without demonstrated capacity. Cached prescriptions are refreshed against the saved profile when loaded.
 
 ## Adding another capability
 
