@@ -1,6 +1,7 @@
 import {
   getInitialPushupProgramWeek,
   getBuildPushupPrescription,
+  getCompletedPushupProgramPosition,
   isContinuingPushupTraining,
   getPushupWeek,
   previousPushupProgramPosition,
@@ -33,15 +34,15 @@ export function recognizeStandardPushupPerformance(state: PushupProgressionState
     goalCompletedAt: bestStandardReps >= state.goalReps ? state.goalCompletedAt ?? completedAt : undefined };
   if (reps < 50) return next;
   return { ...next, currentVariation: 'standard', baselineMax: Math.max(state.baselineMax, reps),
-    programWeek: 6, programDay: 1, programBracket: selectPushupBracket(6, Math.max(state.baselineMax, reps)).id,
     assessmentDue: false, assessmentVariation: 'standard', assessmentReason: undefined,
     nextProgramWeekAfterAssessment: undefined, graduationFrom: undefined };
 }
 
 export function updatePushupGoal(state: PushupProgressionState, goalReps: number, now: string): PushupProgressionState {
   const next = { ...state, goalReps, goalCompletedAt: state.bestStandardReps >= goalReps ? state.goalCompletedAt ?? now : undefined };
-  if (isContinuingPushupTraining(state)) {
-    return { ...next, programWeek: 6, programDay: 1, programBracket: selectPushupBracket(6, state.baselineMax).id,
+  if (state.currentVariation === 'standard' && state.bestStandardReps >= 50) {
+    const anchor = state.lastSuccessfulProgramPosition;
+    return { ...next, ...(anchor ? { programWeek: anchor.week, programDay: anchor.day, programBracket: anchor.bracket } : {}), maintenanceSessionsSinceCheckIn: 0,
       assessmentDue: false, assessmentReason: undefined, nextProgramWeekAfterAssessment: undefined, graduationFrom: undefined };
   }
   return next;
@@ -86,10 +87,9 @@ export function applyPushupAssessment(
       state: {
         ...state,
         currentVariation: 'standard',
+        lastSuccessfulProgramPosition: variation !== state.currentVariation ? undefined : state.lastSuccessfulProgramPosition,
         baselineMax: reps,
-        programWeek: 6,
-        programDay: 1,
-        programBracket: selectPushupBracket(6, reps).id,
+        maintenanceSessionsSinceCheckIn: 0,
         assessmentDue: false,
         assessmentReason: undefined,
         nextProgramWeekAfterAssessment: undefined,
@@ -104,11 +104,12 @@ export function applyPushupAssessment(
     };
   }
 
-  const programWeek = variation === 'standard' && reps >= 50 ? 6 : assessedProgramWeek(state, reps, isGraduationAssessment);
+  const programWeek = assessedProgramWeek(state, reps, isGraduationAssessment);
   const bracket = selectPushupBracket(programWeek, reps);
   const assessedState: PushupProgressionState = {
     ...state,
     currentVariation: isGraduationAssessment ? variation : state.currentVariation,
+    lastSuccessfulProgramPosition: isGraduationAssessment ? undefined : state.lastSuccessfulProgramPosition,
     baselineMax: reps,
     programWeek,
     programDay: 1,
@@ -163,7 +164,9 @@ export function getNextPushupState(
   const completed = exercise.completedSets.filter((set) => set.status === 'completed');
   const missingCount = exercise.prescribedSets.length - completed.length;
   const missedTargets = completed.filter((set) => set.actualReps < set.targetReps).length + missingCount;
-  const recognized = recognizeStandardPushupPerformance(state, exercise, completedAt);
+  const position = getCompletedPushupProgramPosition(exercise);
+  const recorded = { ...state, ...(position ? { lastSuccessfulProgramPosition: position } : {}) };
+  const recognized = recognizeStandardPushupPerformance(recorded, exercise, completedAt);
   const base = { ...recognized, sessionsCompleted: state.sessionsCompleted + 1 };
 
   if (!isContinuingPushupTraining(state) && isContinuingPushupTraining(recognized)) {
@@ -179,9 +182,10 @@ export function getNextPushupState(
   }
 
   if (isContinuingPushupTraining(state)) {
-    const cycleComplete = state.programDay >= 3;
+    const maintenanceSessions = (state.maintenanceSessionsSinceCheckIn ?? 0) + (missedTargets === 0 ? 1 : 0);
+    const cycleComplete = maintenanceSessions >= 3;
     return {
-      state: { ...base, programDay: missedTargets > 0 ? state.programDay : cycleComplete ? 1 : state.programDay + 1,
+      state: { ...base, maintenanceSessionsSinceCheckIn: cycleComplete ? 0 : maintenanceSessions,
         assessmentDue: state.assessmentDue || (missedTargets === 0 && cycleComplete),
         assessmentVariation: 'standard', assessmentReason: 'final' },
       outcome: missedTargets > 0 ? 'repeated' : 'progressed',
@@ -198,7 +202,7 @@ export function getNextPushupState(
         ...base,
         programWeek: previous.week,
         programDay: previous.day,
-        programBracket: selectPushupBracket(previous.week, state.baselineMax).id
+        programBracket: previous.week === state.programWeek ? state.programBracket : selectPushupBracket(previous.week, state.baselineMax).id
       },
       outcome: 'regressed',
       summary: `Push-up volume eased to Week ${previous.week}, Day ${previous.day} for a more repeatable session.`

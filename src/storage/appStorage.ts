@@ -1,6 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { clampPushupGoal, createBuildWorkout, DEFAULT_BUILD_REST_PREFERENCES } from '@/data/buildProgram';
-import { updatePushupGoal } from '@/lib/pushupProgression';
 import { getInitialPushupProgramWeek, selectPushupBracket } from '@/data/pushupProgram';
 import { BuildProfile, BuildWorkoutPrescription, WorkoutHistoryEntry } from '@/types/build';
 import { WorkoutPlan } from '@/types/workout';
@@ -73,12 +72,8 @@ export function migrateBuildProfile(value: unknown): BuildProfile | null {
 
 export async function loadBuildProfile(): Promise<BuildProfile | null> {
   const stored = await readJson<unknown>(KEYS.profile);
-  let migrated = migrateBuildProfile(stored);
-  const completedNeedsRepair = migrated?.pushup.goalCompletedAt && migrated.pushup.programWeek !== 6;
-  if (migrated && completedNeedsRepair) {
-    migrated = { ...migrated, pushup: updatePushupGoal(migrated.pushup, migrated.pushup.goalReps, migrated.updatedAt) };
-  }
-  if (migrated && ((stored as { schemaVersion?: number } | null)?.schemaVersion !== 5 || completedNeedsRepair)) {
+  const migrated = migrateBuildProfile(stored);
+  if (migrated && (stored as { schemaVersion?: number } | null)?.schemaVersion !== 5) {
     await Promise.all([
       saveBuildProfile(migrated),
       AsyncStorage.removeItem(KEYS.activeBuildWorkout)

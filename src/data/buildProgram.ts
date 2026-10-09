@@ -175,8 +175,8 @@ export function createBuildWorkout(profile: BuildProfile, now = new Date().toISO
       sets: makeSets(`${workoutId}-pushup`, targets),
       cue: 'Keep a rigid body line and leave a little in reserve.',
       progressionLabel: isContinuingPushupTraining(profile.pushup)
-        ? `Five-set ${profile.pushup.goalCompletedAt ? 'maintenance' : 'goal training'} · ${profile.pushup.goalReps} consecutive goal · ${program.bracket.label}`
-        : `Week ${program.week} · Day ${program.day} · ${program.bracket.label}`,
+        ? `Five-set maintenance · ${profile.pushup.goalReps} consecutive goal · Week ${program.week}, Day ${program.day} · ${program.bracket.label}`
+        : `Week ${program.week} · Day ${program.day} · ${program.bracket.label} · ${profile.pushup.goalReps} consecutive goal`,
       equipment: variation === 'incline' ? ['bodyweight', 'step-platform'] : ['bodyweight'],
       restSecondsBetweenSets: profile.rest.pushupMode === 'program'
           ? program.restSeconds
