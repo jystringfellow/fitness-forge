@@ -25,6 +25,19 @@ export function getPushupTargets(state: PushupProgressionState): number[] {
   return getBuildPushupPrescription(state).sets.map((set) => set.reps);
 }
 
+export function recognizeStandardPushupPerformance(state: PushupProgressionState, exercise: CompletedExercise, completedAt: string): PushupProgressionState {
+  if (exercise.skipped || (exercise.variation ?? state.currentVariation) !== 'standard') return state;
+  const reps = Math.max(0, ...exercise.completedSets.filter((set) => set.status === 'completed').map((set) => set.actualReps));
+  const bestStandardReps = Math.max(state.bestStandardReps, reps);
+  const next = { ...state, bestStandardReps,
+    goalCompletedAt: bestStandardReps >= state.goalReps ? state.goalCompletedAt ?? completedAt : undefined };
+  if (reps < 50) return next;
+  return { ...next, currentVariation: 'standard', baselineMax: Math.max(state.baselineMax, reps),
+    programWeek: 6, programDay: 1, programBracket: selectPushupBracket(6, Math.max(state.baselineMax, reps)).id,
+    assessmentDue: false, assessmentVariation: 'standard', assessmentReason: undefined,
+    nextProgramWeekAfterAssessment: undefined, graduationFrom: undefined };
+}
+
 export function updatePushupGoal(state: PushupProgressionState, goalReps: number, now: string): PushupProgressionState {
   const next = { ...state, goalReps, goalCompletedAt: state.bestStandardReps >= goalReps ? state.goalCompletedAt ?? now : undefined };
   if (isContinuingPushupTraining(state)) {
@@ -150,7 +163,16 @@ export function getNextPushupState(
   const completed = exercise.completedSets.filter((set) => set.status === 'completed');
   const missingCount = exercise.prescribedSets.length - completed.length;
   const missedTargets = completed.filter((set) => set.actualReps < set.targetReps).length + missingCount;
-  const base = { ...state, sessionsCompleted: state.sessionsCompleted + 1 };
+  const recognized = recognizeStandardPushupPerformance(state, exercise, completedAt);
+  const base = { ...recognized, sessionsCompleted: state.sessionsCompleted + 1 };
+
+  if (!isContinuingPushupTraining(state) && isContinuingPushupTraining(recognized)) {
+    return { state: base, outcome: 'progressed', summary: `Recorded ${recognized.bestStandardReps} consecutive standard push-ups. Next session uses five-set challenge training.` };
+  }
+
+  if (state.assessmentDue && !isContinuingPushupTraining(state)) {
+    return { state: base, outcome: 'repeated', summary: 'Push-up training continues at your current variation while the separate check-in is pending.' };
+  }
 
   if (exercise.skipped || missedTargets === 1) {
     return { state: base, outcome: 'repeated', summary: `Push-up Week ${state.programWeek}, Day ${state.programDay} will repeat.` };

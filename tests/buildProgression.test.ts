@@ -331,7 +331,7 @@ test('pending assessments stay out of BUILD workouts', () => {
   }, NOW);
   const workout = createBuildWorkout({ ...profile, pushup: { ...profile.pushup, assessmentDue: true, assessmentVariation: 'standard', graduationFrom: 'knee' } }, NOW);
   assert.equal(workout.exercises.some((item) => item.kind === 'assessment'), false);
-  assert.equal(workout.exercises.some((item) => item.kind === 'push-up'), false);
+  assert.equal(workout.exercises.find((item) => item.kind === 'push-up')?.sets.length, 5);
   assert.equal(workout.templateId, 'strength-a');
 });
 
@@ -418,7 +418,7 @@ test('BUILD prescriptions include exercise-specific rest intervals', () => {
     pushup: { ...profile.pushup, assessmentDue: true, assessmentVariation: 'knee' }
   }, NOW);
   assert.equal(assessmentPending.exercises.some((item) => item.kind === 'assessment'), false);
-  assert.equal(assessmentPending.exercises.some((item) => item.kind === 'push-up'), false);
+  assert.equal(assessmentPending.exercises.find((item) => item.kind === 'push-up')?.sets.length, 5);
 });
 
 test('rest preferences override every BUILD category while program push-up rest remains available', () => {

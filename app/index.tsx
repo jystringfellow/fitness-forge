@@ -102,9 +102,9 @@ export default function TodayScreen() {
       <Text style={styles.body}>Your next scheduled session is ready. Missed days do not create debt—continue when you can.</Text>
 
       {profile.pushup.assessmentDue ? <View style={styles.assessmentCard}>
-        <Text style={styles.assessmentKicker}>PUSH-UP CHECK-IN DUE</Text>
+        <Text style={styles.assessmentKicker}>PUSH-UP CHECK-IN AVAILABLE</Text>
         <Text style={styles.cardTitle}>{profile.pushup.assessmentVariation === 'standard' ? 'Standard' : profile.pushup.assessmentVariation} push-up assessment</Text>
-        <Text style={styles.body}>Do this separately from BUILD, ideally over the weekend or on another recovered day. Your result will set the next push-up prescription.{profile.pushup.currentVariation === 'standard' && (profile.pushup.baselineMax >= 50 || profile.pushup.goalCompletedAt) ? ' Five-set training continues while the check-in is pending.' : ''}</Text>
+        <Text style={styles.body}>Your training sets are ready below. Do this check-in separately from BUILD on a recovered day to recalibrate targets or assess a harder variation.</Text>
         <Text style={styles.progression}>Previous {profile.pushup.currentVariation} max · {profile.pushup.baselineMax}</Text>
         <TouchableOpacity accessibilityRole="button" style={styles.secondary} onPress={() => router.push('/pushup-assessment' as Href)}><Text style={styles.secondaryText}>START CHECK-IN</Text></TouchableOpacity>
       </View> : null}

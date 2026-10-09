@@ -3,7 +3,8 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { clampPushupGoal, createInitialBuildProfile, PUSHUP_VARIATIONS } from '@/data/buildProgram';
 import { getBuildPushupPrescription, isContinuingPushupTraining } from '@/data/pushupProgram';
-import { loadBuildProfile, resetBuildData, saveActiveBuildWorkout, saveBuildProfile } from '@/storage/appStorage';
+import { loadBuildProfile, loadWorkoutHistory, resetBuildData, saveActiveBuildWorkout, saveBuildProfile, saveRecalculatedBuild } from '@/storage/appStorage';
+import { recalculateBuildFromHistory } from '@/lib/recalculateBuild';
 import { theme } from '@/theme/brand';
 import { BuildProfile, PushupVariation } from '@/types/build';
 import { useAuth } from '@/auth/AuthProvider';
@@ -34,6 +35,9 @@ export default function BuildScreen() {
   const [pushupMax, setPushupMax] = useState('20');
   const [pushupGoal, setPushupGoal] = useState('50');
   const [savedGoalDraft, setSavedGoalDraft] = useState('50');
+  const [recalculation, setRecalculation] = useState<ReturnType<typeof recalculateBuildFromHistory> | null>(null);
+  const [recalculating, setRecalculating] = useState(false);
+  const [recalculationMessage, setRecalculationMessage] = useState<string | null>(null);
 
   useFocusEffect(useCallback(() => {
     loadBuildProfile().then((saved) => { setProfile(saved); if (saved) { setSavedGoalDraft(String(saved.pushup.goalReps)); setSavedWeightDraft(String(saved.bodyWeightHistory.at(-1)?.weightLb ?? '')); } setLoading(false); }).catch(() => setLoading(false));
@@ -85,6 +89,40 @@ export default function BuildScreen() {
     setProfile(next);
   };
 
+  const previewRecalculation = async () => {
+    setRecalculating(true);
+    setRecalculationMessage(null);
+    try {
+      const saved = await loadBuildProfile();
+      if (!saved) throw new Error('Set up BUILD first.');
+      setRecalculation(recalculateBuildFromHistory(saved, await loadWorkoutHistory()));
+    } catch {
+      setRecalculationMessage('Could not read your saved results. Try again.');
+    } finally { setRecalculating(false); }
+  };
+
+  const applyRecalculation = async () => {
+    if (!recalculation) return;
+    setRecalculating(true);
+    try {
+      // Read again in case a goal change or cloud restore happened during preview.
+      const saved = await loadBuildProfile();
+      if (!saved) throw new Error('Set up BUILD first.');
+      const latest = recalculateBuildFromHistory(saved, await loadWorkoutHistory());
+      if (JSON.stringify(latest.profile.pullup) !== JSON.stringify(recalculation.profile.pullup)
+        || JSON.stringify(latest.profile.pushup) !== JSON.stringify(recalculation.profile.pushup)) {
+        setRecalculation(latest);
+        setRecalculationMessage('Your saved results changed. Review the refreshed targets before applying.');
+        return;
+      }
+      await saveRecalculatedBuild(latest.profile);
+      setProfile(latest.profile);
+      setRecalculation(null);
+      setRecalculationMessage('Targets recalculated. Today’s workout is ready.');
+    } catch { setRecalculationMessage('Could not save the recalculated targets. Try again.'); }
+    finally { setRecalculating(false); }
+  };
+
   if (loading) return <View style={styles.center}><Text style={styles.body}>Loading BUILD…</Text></View>;
 
   if (profile?.active) {
@@ -93,6 +131,16 @@ export default function BuildScreen() {
     return <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.kicker}>BUILD PROGRAM</Text><Text style={styles.title}>Capability, on purpose.</Text>
       <Text style={styles.body}>Your next workout is already prescribed. Progression remains submaximal and changes only from recorded performance.</Text>
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Recalculate BUILD</Text>
+        <Text style={styles.body}>Use your recent logged results to refresh pull-up targets and recognize recorded standard push-up reps. Review the targets before applying them to Today. Your workout history and weekly schedule stay intact.</Text>
+        {recalculation ? <>
+          {recalculation.summary.map((line, index) => <Text key={index} style={styles.body}>{line}</Text>)}
+          <TouchableOpacity disabled={recalculating} style={styles.primary} onPress={applyRecalculation}><Text style={styles.primaryText}>{recalculating ? 'SAVING…' : 'Apply to Today'}</Text></TouchableOpacity>
+          <TouchableOpacity disabled={recalculating} style={styles.secondary} onPress={() => { setRecalculation(null); setRecalculationMessage(null); }}><Text style={styles.secondaryText}>Cancel</Text></TouchableOpacity>
+        </> : <TouchableOpacity disabled={recalculating} style={styles.secondary} onPress={previewRecalculation}><Text style={styles.secondaryText}>{recalculating ? 'READING RESULTS…' : 'Review recalculated targets'}</Text></TouchableOpacity>}
+        {recalculationMessage ? <Text accessibilityRole="alert" style={styles.body}>{recalculationMessage}</Text> : null}
+      </View>
       {profile.pullup.enabled ? <View style={styles.card}><Text style={styles.cardTitle}>First strict pull-up</Text><Text style={styles.metric}>{profile.pullup.currentAssistanceLb === 0 ? `${profile.pullup.bestUnassistedReps} best unassisted` : `${profile.pullup.currentAssistanceLb} lb assistance`}</Text><Text style={styles.body}>Next: {profile.pullup.targetReps.join(' / ')}</Text>{readiness.ready ? <Text style={styles.ready}>You may be ready to try one optional unassisted rep while fresh.</Text> : null}<NumberField label="Current body weight (optional)" value={savedWeightDraft} onChange={setSavedWeightDraft} suffix="lb" /><TouchableOpacity style={styles.secondary} onPress={recordBodyWeight}><Text style={styles.secondaryText}>Record weight</Text></TouchableOpacity></View> : null}
       {profile.pushup.enabled ? <View style={styles.card}><Text style={styles.cardTitle}>{profile.pushup.goalReps} strict push-ups</Text><Text style={styles.metric}>{profile.pushup.currentVariation} · max {profile.pushup.baselineMax}</Text><Text style={styles.body}>{isContinuingPushupTraining(profile.pushup) ? `Five-set ${profile.pushup.goalCompletedAt ? 'maintenance · goal complete' : 'goal training'}` : profile.pushup.assessmentDue ? `${profile.pushup.assessmentVariation} assessment next` : `Week ${profile.pushup.programWeek} · Day ${profile.pushup.programDay} · ${pushupProgram.bracket.label}`}</Text><NumberField label="Strict push-up goal (50–100)" value={savedGoalDraft} onChange={setSavedGoalDraft} suffix="reps" /><TouchableOpacity style={styles.secondary} onPress={updatePushupGoal}><Text style={styles.secondaryText}>Update goal</Text></TouchableOpacity></View> : null}
       <View style={styles.card}>

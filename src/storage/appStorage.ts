@@ -92,6 +92,15 @@ export async function saveBuildProfile(profile: BuildProfile): Promise<void> {
   await markCloudDataDirty();
 }
 
+export async function saveRecalculatedBuild(profile: BuildProfile): Promise<void> {
+  const workout = createBuildWorkout(profile);
+  await AsyncStorage.multiSet([
+    [KEYS.profile, JSON.stringify(profile)],
+    [KEYS.activeBuildWorkout, JSON.stringify(workout)]
+  ]);
+  await markCloudDataDirty();
+}
+
 export async function loadActiveBuildWorkout(): Promise<BuildWorkoutPrescription | null> {
   const workout = await readJson<BuildWorkoutPrescription>(KEYS.activeBuildWorkout);
   if (workout?.exercises.some((exercise) => exercise.kind === 'assessment')) {

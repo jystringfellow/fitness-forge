@@ -162,7 +162,7 @@ export function createBuildWorkout(profile: BuildProfile, now = new Date().toISO
     });
   }
 
-  if (profile.pushup.enabled && (!profile.pushup.assessmentDue || isContinuingPushupTraining(profile.pushup))) {
+  if (profile.pushup.enabled) {
     const variation = profile.pushup.currentVariation;
     const program = getBuildPushupPrescription(profile.pushup);
     const targets: Array<number | PushupSetTarget> = program.sets;

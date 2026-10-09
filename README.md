@@ -55,6 +55,10 @@ The push-up table contains 18 sessions. Weeks 1–4 prescribe five sets, Weeks 5
 
 After achieving a standard push-up goal or recording a standard max of at least 50, BUILD continues with the challenge's five-set Day 1 column selected from the recorded max. Every three successful sessions offers a separate check-in; training continues while it is pending. Updating the goal refreshes Today, clears the pending check-in for continued training, and preserves the recorded max. A higher goal alone does not increase reps without demonstrated capacity. Cached prescriptions are refreshed against the saved profile when loaded.
 
+Pending phase and graduation check-ins also keep five training sets available at the current variation, holding the phase until the check-in is recorded. A completed standard training set of at least 50 recognizes continued-training capability without requiring a separate assessment.
+
+In BUILD, **Review recalculated targets** previews a repair from saved results, then **Apply to Today** saves the proposed targets and a fresh workout together. Recalculation uses the most recent pull-up prescription and actual performance, confirming the ceiling only when the prior session also completed every set at 10 or more reps at the same assistance. It recognizes standard push-up results and stored assessments, deduplicates history, ignores sessions before the current setup, and preserves session counts, accessory progression, settings, and the weekly template. Repeating it with the same history does not repeatedly reduce assistance. Results older than a newer push-up assessment do not override that assessment.
+
 ## Adding another capability
 
 1. Add the focused state and prescription/result fields to `src/types/build.ts`.
