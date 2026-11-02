@@ -1,4 +1,6 @@
 import { CARDIO_LIBRARY, EXERCISES } from '@/data/exercises';
+import { createBuildWorkout } from '@/data/buildProgram';
+import { BuildProfile, ExercisePrescription } from '@/types/build';
 import {
   Attachment,
   ConcreteAttachment,
@@ -59,25 +61,16 @@ const WORK_PROMPTS = [
   'clean form first'
 ];
 
-const REST_PROMPTS = [
-  'shake it out',
-  'breathe low',
-  'reset your stance',
-  'quick sip if needed',
-  'loosen your shoulders',
-  'find the next setup'
-];
-
 const FINISHER_LIBRARY: Record<Energy, string[]> = {
   low: [
     '2 rounds of 20s tall march + 40s walk',
-    '2 rounds of 30s low pogo + 30s mobility reset',
+    '2 rounds of 30s low pogo + 30s easy mobility',
     '1 round of 45s steady fast feet + 45s walk'
   ],
   normal: [
     '2 rounds of 20s fast feet + 40s walk',
     '2 rounds of 30s skater steps + 30s walk',
-    '3 rounds of 15s pogo hops + 45s reset'
+    '3 rounds of 15s pogo hops + 45s rest'
   ],
   high: [
     '3 rounds of 20s fast feet + 20s squat jumps + 20s walk',
@@ -372,6 +365,12 @@ function formatRepExercise(reps: number, exercise: string, round: number, totalR
   return `${reps} ${exercise} ${round}/${totalRounds}`;
 }
 
+function formatSequenceSegment(segment: ParsedCardioSegment, round: number, totalRounds: number): string {
+  if (segment.reps) return formatRepExercise(segment.reps, segment.exercise, round, totalRounds);
+  if (segment.isRest && segment.exercise.toLowerCase() === 'rest') return `Rest for ${segment.durationSecs}s`;
+  return formatTimedExercise(segment.durationSecs, segment.exercise, round, totalRounds);
+}
+
 function parseCardioSequence(text: string): ParsedCardioSequence {
   const leadingRoundsMatch = text.match(/(\d+)\s+rounds?\s+of/i);
   const trailingRepeatMatch = text.match(/\s+x\s*(\d+)\s*$/i);
@@ -443,9 +442,7 @@ function buildCardioIntervalSteps(
       }
 
       sequence.segments.forEach((segment) => {
-        const label = segment.reps
-          ? formatRepExercise(segment.reps, segment.exercise, round, sequence.totalRounds)
-          : formatTimedExercise(segment.durationSecs, segment.exercise, round, sequence.totalRounds);
+        const label = formatSequenceSegment(segment, round, sequence.totalRounds);
 
         candidateSteps.push({
           text: label,
@@ -480,7 +477,9 @@ function buildCardioIntervalSteps(
       text:
         durationSecs === step.durationSecs || !step.exerciseName || !step.round || !step.totalRounds
           ? step.text
-          : formatTimedExercise(durationSecs, step.exerciseName, step.round, step.totalRounds)
+          : step.isRest && step.exerciseName.toLowerCase() === 'rest'
+            ? `Rest for ${durationSecs}s`
+            : formatTimedExercise(durationSecs, step.exerciseName, step.round, step.totalRounds)
     });
     remainingDurationSecs -= durationSecs;
   }
@@ -567,9 +566,7 @@ function buildOptionalFinisherSteps(note?: string): WorkoutIntervalStep[] {
 
   for (let round = 1; round <= finisher.totalRounds; round += 1) {
     finisher.segments.forEach((segment) => {
-      const label = segment.reps
-        ? formatRepExercise(segment.reps, segment.exercise, round, finisher.totalRounds)
-        : formatTimedExercise(segment.durationSecs, segment.exercise, round, finisher.totalRounds);
+      const label = formatSequenceSegment(segment, round, finisher.totalRounds);
 
       intervalSteps.push({
         text: label,
@@ -628,7 +625,7 @@ function buildIntervalSteps(
 
       if (!isLastExercise || !isLastRound) {
         intervalSteps.push({
-          text: `${roundInterval.restSeconds}s reset - ${pickRandom(REST_PROMPTS)}`,
+          text: `Rest for ${roundInterval.restSeconds}s`,
           durationSecs: roundInterval.restSeconds,
           isRest: true,
           round,
@@ -657,8 +654,10 @@ function buildIntervalSteps(
 
 export function generateWorkoutPlan(
   input: GenerateWorkoutInput,
-  includeIntervalSteps = false
+  includeIntervalSteps = false,
+  buildProfile?: BuildProfile
 ): WorkoutPlan {
+  if (input.fixedStations?.length) return generateCustomCircuit(input, includeIntervalSteps, buildProfile);
   const split = TIME_SPLIT[input.time];
   const intervals = ENERGY_TO_WORK_REST[input.energy];
   const workoutFormat = pickWorkoutFormat(input.energy, input.focus);
@@ -698,7 +697,150 @@ export function generateWorkoutPlan(
 
 export function generateWorkout(
   input: GenerateWorkoutInput,
-  includeIntervalSteps = false
+  includeIntervalSteps = false,
+  buildProfile?: BuildProfile
 ): WorkoutPlan {
-  return generateWorkoutPlan(input, includeIntervalSteps);
+  return generateWorkoutPlan(input, includeIntervalSteps, buildProfile);
+}
+
+export function buildTargetsMatchPlan(profile: BuildProfile, planned: ExercisePrescription[]): boolean {
+  const current = createBuildWorkout(profile).exercises.filter((exercise) => planned.some((item) => item.kind === exercise.kind));
+  const signature = (exercises: ExercisePrescription[]) => exercises
+    .map((exercise) => ({
+      kind: exercise.kind,
+      variation: exercise.variation,
+      sets: exercise.sets.map((set) => [set.targetReps, set.targetAssistanceLb, set.targetType])
+    }))
+    .sort((left, right) => left.kind.localeCompare(right.kind));
+  return current.length === planned.length && JSON.stringify(signature(current)) === JSON.stringify(signature(planned));
+}
+
+export function formatCircuitRoundPreview(plan: WorkoutPlan, round: number): string {
+  return plan.intervalSteps
+    .filter((step) => step.section === 'main' && step.round === round && !step.isRest)
+    .map((step) => step.isLinkedWork
+      ? `${step.exerciseName} ${step.durationSecs}s (BUILD)`
+      : step.linkedSet
+        ? `${step.exerciseName} ${step.linkedSet.targetReps} reps (BUILD)`
+      : `${step.exerciseName} ${step.reps ? `${step.reps} reps` : `${step.durationSecs}s`}`)
+    .join(' · ');
+}
+
+function generateCustomCircuit(input: GenerateWorkoutInput, includeIntervalSteps: boolean, buildProfile?: BuildProfile): WorkoutPlan {
+  const rounds = input.circuitRounds ?? (input.energy === 'high' ? 4 : 3);
+  const selected = input.fixedStations ?? [];
+  const linkedExercises: ExercisePrescription[] = [];
+  if (selected.some((station) => station.mode === 'build')) {
+    if (!buildProfile?.active) throw new Error('Set up an active BUILD profile to link its targets.');
+    const prescription = createBuildWorkout(buildProfile);
+    for (const station of selected.filter((item) => item.mode === 'build')) {
+      const kind = station.exerciseId === 'build-pull-up' ? 'pull-up' : station.exerciseId === 'build-push-up' ? 'push-up' : null;
+      const exercise = prescription.exercises.find((item) => item.kind === kind);
+      if (!exercise) throw new Error(`The selected BUILD goal is not enabled. Check your BUILD setup.`);
+      linkedExercises.push(exercise);
+    }
+  }
+
+  const attachment = pickAttachment(input.attachment, input.focus, input.energy);
+  const reservedIds = new Set(selected.map((station) => station.exerciseId));
+  const hasFixedPushup = selected.some((station) => station.exerciseId.includes('push-up'));
+  const hasFixedPullup = selected.some((station) => station.exerciseId.includes('pull-up'));
+  const pool = pickMainExercises(attachment, input.focus).filter((exercise) =>
+    !reservedIds.has(exercise.id) &&
+    !(hasFixedPullup && /pull-up|chin-up/.test(exercise.id)) &&
+    !(hasFixedPushup && /push-up/.test(exercise.id))
+  );
+  const warmupSecs = 5 * 60;
+  const restSecs = input.energy === 'low' ? 25 : input.energy === 'high' ? 15 : 20;
+  const roundStations: Array<Array<{ exercise: Exercise; seconds: number; reps?: number; linkedSet?: WorkoutIntervalStep['linkedSet']; timedLinkedSeconds?: number; restAfter: number }>> = Array.from({ length: rounds }, () => []);
+  for (const station of selected) {
+    const linked = linkedExercises.find((item) => station.exerciseId === 'build-pull-up' ? item.kind === 'pull-up' : station.exerciseId === 'build-push-up' ? item.kind === 'push-up' : false);
+    const exercise = linked
+      ? { id: linked.exerciseId, name: linked.name, attachment, tags: [], focus: [], cue: linked.cue } as Exercise
+      : EXERCISES.find((item) => item.id === station.exerciseId);
+    if (!exercise && station.exerciseId !== 'random-core') throw new Error('A fixed exercise is no longer in the library.');
+    const count = linked?.sets.length ?? (station.frequency === 'every-round' ? rounds : Math.max(1, Math.min(rounds, station.frequency)));
+    for (let index = 0; index < count; index += 1) {
+      const round = Math.min(rounds - 1, Math.floor(((index + 0.5) * rounds) / count));
+      const picked = station.exerciseId === 'random-core'
+        ? pickRandom(EXERCISES.filter((item) => item.tags.includes('core') && !item.tags.includes('push') && !item.tags.includes('pull') && item.equipment?.every((id) => id === 'bodyweight')))
+        : exercise!;
+      const set = linked?.sets[index];
+      roundStations[round].push({
+        exercise: picked,
+        seconds: set ? station.seconds ?? Math.max(20, set.targetReps * 4) : station.mode === 'time' ? station.seconds ?? 30 : Math.max(20, (station.reps ?? 10) * 4),
+        reps: set ? undefined : station.mode === 'reps' ? station.reps ?? 10 : undefined,
+        linkedSet: set ? { exerciseId: linked!.id, setIndex: index, targetReps: set.targetReps, targetAssistanceLb: set.targetAssistanceLb } : undefined,
+        timedLinkedSeconds: set ? station.seconds : undefined,
+        restAfter: restSecs
+      });
+    }
+  }
+  const fixedRows = roundStations.flat();
+  const fixedSecs = fixedRows.reduce((sum, item) => sum + item.seconds, 0);
+  const stationsPerRound = Math.max(...roundStations.map((row) => row.length));
+  const replacementCount = roundStations.reduce((sum, row) => sum + stationsPerRound - row.length, 0);
+  const fixedRestSecs = fixedRows.reduce((sum, station) => sum + station.restAfter, 0) - restSecs;
+  const minimumSecs = warmupSecs + fixedSecs + fixedRestSecs + replacementCount * (30 + restSecs);
+  if (minimumSecs > input.time * 60) throw new Error(`These fixed stations need at least ${Math.ceil(minimumSecs / 60)} minutes. Select a longer workout or fewer stations.`);
+
+  const remaining = input.time * 60 - minimumSecs;
+  const extraPerRound = Math.min(5, Math.floor(remaining / (rounds * (30 + restSecs))));
+  const fillerCount = replacementCount + extraPerRound * rounds;
+  const extraSecs = remaining - extraPerRound * rounds * (30 + restSecs);
+  const randomWorkSecs = fillerCount ? 30 + Math.min(30, Math.floor(extraSecs / fillerCount)) : 0;
+  const fallbackPool = EXERCISES.filter((exercise) => exercise.equipment?.every((id) => id === 'bodyweight')
+    && !reservedIds.has(exercise.id)
+    && !(hasFixedPullup && /pull-up|chin-up/.test(exercise.id))
+    && !(hasFixedPushup && /push-up/.test(exercise.id)));
+  const fillerPool = [...pool, ...fallbackPool.filter((exercise) => !pool.some((item) => item.id === exercise.id))];
+  if (fillerCount && !fillerPool.length) throw new Error('No compatible exercises are available to fill this circuit. Change the attachment or fixed stations.');
+  const cardioOptions = pickCardioOptions(input.focus, warmupSecs);
+  const cardioIntervalSteps = buildCardioIntervalSteps(cardioOptions, warmupSecs);
+  const cardioBlock = buildCardioBlock(5, cardioIntervalSteps);
+  const intervalSteps: WorkoutIntervalStep[] = [...cardioIntervalSteps, {
+    text: 'Ready for your custom circuit?', durationSecs: 0, isRest: true, section: 'main', isPrompt: true, actionLabel: 'Yes'
+  }];
+  const allExercises: Exercise[] = [];
+  for (let round = 0; round < rounds; round += 1) {
+    const stations: typeof roundStations[number] = [...roundStations[round]];
+    const fillersNeeded = stationsPerRound - stations.length + extraPerRound;
+    for (let index = 0; index < fillersNeeded; index += 1) {
+      const available = fillerPool.filter((exercise) => !stations.some((station) => station.exercise.id === exercise.id));
+      const exercise = pickRandom(available.length ? available : fillerPool);
+      stations.push({ exercise, seconds: randomWorkSecs, restAfter: restSecs });
+    }
+    for (const station of stations) {
+      if (!allExercises.some((item) => item.id === station.exercise.id)) allExercises.push(station.exercise);
+      if (station.linkedSet && station.timedLinkedSeconds) intervalSteps.push({
+        text: `${station.exercise.name} · ${station.timedLinkedSeconds}s work`,
+        durationSecs: station.timedLinkedSeconds, isRest: false, section: 'main',
+        round: round + 1, totalRounds: rounds, exerciseName: station.exercise.name, isLinkedWork: true
+      });
+      if (!station.timedLinkedSeconds) intervalSteps.push({
+        text: station.linkedSet
+          ? `${station.exercise.name}: ${station.linkedSet.targetReps} reps${station.linkedSet.targetAssistanceLb === undefined ? '' : ` · ${station.linkedSet.targetAssistanceLb} lb assist`}`
+          : `${station.exercise.name} · ${station.reps ? `${station.reps} reps` : `${station.seconds}s`}`,
+        durationSecs: station.linkedSet ? 0 : station.seconds,
+        isRest: false, section: 'main', round: round + 1, totalRounds: rounds,
+        exerciseName: station.exercise.name, reps: station.reps, isPrompt: Boolean(station.linkedSet),
+        linkedSet: station.linkedSet ? { ...station.linkedSet, estimatedSecs: station.seconds } : undefined
+      });
+      if (round !== rounds - 1 || station !== stations[stations.length - 1] || station.timedLinkedSeconds) intervalSteps.push({
+        text: station.timedLinkedSeconds ? `Rest for ${station.restAfter}s · log ${station.exercise.name} reps` : `Rest for ${station.restAfter}s`,
+        durationSecs: station.restAfter, isRest: true, section: 'main', round: round + 1, totalRounds: rounds,
+        exerciseName: station.timedLinkedSeconds ? station.exercise.name : undefined,
+        linkedSet: station.timedLinkedSeconds ? { ...station.linkedSet!, workSeconds: station.timedLinkedSeconds } : undefined
+      });
+    }
+  }
+  const estimatedDurationSecs = warmupSecs + intervalSteps.filter((step) => step.section === 'main').reduce((sum, step) =>
+    sum + (step.isRest ? step.durationSecs : step.linkedSet ? step.linkedSet.estimatedSecs ?? 0 : step.durationSecs), 0);
+  if (estimatedDurationSecs > input.time * 60) throw new Error(`These fixed stations need at least ${Math.ceil(estimatedDurationSecs / 60)} minutes. Select a longer workout or fewer stations.`);
+  return {
+    source: 'FORGE', title: `${input.time}-min custom forge`, createdAt: new Date().toISOString(),
+    input: { ...input, attachment }, cardioBlock, intervalSteps: includeIntervalSteps ? intervalSteps : [],
+    mainBlock: { rounds, workSeconds: randomWorkSecs, restSeconds: restSecs, format: 'Custom circuit', exercises: allExercises },
+    linkedExercises, estimatedDurationSecs
+  };
 }

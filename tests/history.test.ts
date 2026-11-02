@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { loadActiveBuildWorkout, loadBuildProfile, migrateBuildProfile, prependUniqueHistory, saveRecalculatedBuild, STORAGE_KEYS } from '@/storage/appStorage';
+import { loadActiveBuildWorkout, loadBuildProfile, migrateBuildProfile, prependUniqueHistory, recordForgeCompletion, saveRecalculatedBuild, STORAGE_KEYS } from '@/storage/appStorage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createBuildWorkout, createInitialBuildProfile } from '@/data/buildProgram';
 import { updatePushupGoal } from '@/lib/pushupProgression';
 import { WorkoutHistoryEntry } from '@/types/build';
+import { generateWorkout } from '@/lib/generateWorkout';
 
 test('applying recalculation saves profile and Today together without writing history', async (context) => {
   const writes: Array<[string, string]> = [];
@@ -66,6 +67,41 @@ test('unified history preserves BUILD and FORGE source distinctions and prevents
   assert.deepEqual(history.map((item) => item.source), ['FORGE', 'BUILD']);
   assert.strictEqual(prependUniqueHistory(history, forge), history);
   assert.deepEqual(JSON.parse(JSON.stringify(history)), history);
+});
+
+test('hybrid FORGE completion records one session and advances only the linked capability once', async (context) => {
+  const profile = createInitialBuildProfile({
+    pullupEnabled: true, pullupAssistanceLb: 40, pullupCurrentReps: 6, assistanceIncrementLb: 5,
+    pushupEnabled: true, pushupVariation: 'standard', pushupCurrentMax: 10
+  }, '2026-01-01T00:00:00.000Z');
+  const values = new Map<string, string>([[STORAGE_KEYS.profile, JSON.stringify(profile)]]);
+  context.mock.method(AsyncStorage, 'getItem', async (key: string) => values.get(key) ?? null);
+  context.mock.method(AsyncStorage, 'setItem', async (key: string, value: string) => { values.set(key, value); });
+  const plan = generateWorkout({ time: 20, energy: 'normal', focus: 'full body', attachment: 'handles', circuitRounds: 5,
+    fixedStations: [{ id: 'pull', exerciseId: 'build-pull-up', mode: 'build', frequency: 'every-round' }]
+  }, true, profile);
+  const exercise = plan.linkedExercises![0];
+  const results = exercise.sets.map((set, setIndex) => ({ exerciseId: exercise.id, setIndex, actualReps: set.targetReps,
+    actualAssistanceLb: 40, status: 'completed' as const }));
+  await recordForgeCompletion(plan, results);
+  await recordForgeCompletion(plan, results);
+  const next = await loadBuildProfile();
+  const history = JSON.parse(values.get(STORAGE_KEYS.history)!) as WorkoutHistoryEntry[];
+  assert.equal(history.length, 1);
+  assert.equal(history[0].source, 'FORGE');
+  assert.equal(history[0].source === 'FORGE' ? history[0].linkedExercises?.[0].restSecondsBetweenSets : undefined, plan.mainBlock.restSeconds);
+  assert.equal(next?.pullup.sessionsCompleted, 1);
+  assert.equal(next?.pushup.sessionsCompleted, 0);
+  assert.equal(next?.nextTemplateIndex, profile.nextTemplateIndex);
+
+  const stalePlan = { ...plan, createdAt: new Date(Date.parse(plan.createdAt) + 1000).toISOString() };
+  await recordForgeCompletion(stalePlan, results);
+  const afterStale = await loadBuildProfile();
+  const updatedHistory = JSON.parse(values.get(STORAGE_KEYS.history)!) as WorkoutHistoryEntry[];
+  assert.equal(updatedHistory.length, 2);
+  assert.equal(afterStale?.pullup.sessionsCompleted, 1);
+  assert.deepEqual(afterStale?.pullup.targetReps, next?.pullup.targetReps);
+  assert.match(updatedHistory[0].source === 'FORGE' ? updatedHistory[0].progressionSummary?.[0] ?? '' : '', /targets changed/);
 });
 
 test('schema v1 BUILD profiles migrate into the table-driven week and phase model', () => {

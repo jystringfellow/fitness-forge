@@ -10,6 +10,7 @@ import { theme } from '@/theme/brand';
 import { BuildProfile, BuildWorkoutPrescription, BuildWorkoutResult, ExercisePrescription, SetStatus } from '@/types/build';
 
 const restChime = require('../assets/timer-switch.wav');
+const countdownChime = require('../assets/timer-countdown.wav');
 
 interface DraftSet {
   id: string;
@@ -79,6 +80,7 @@ export default function BuildWorkoutScreen() {
   const [summary, setSummary] = useState<string[] | null>(null);
   const [restTimer, setRestTimer] = useState<RestTimer | null>(null);
   const restPlayer = useAudioPlayer(restChime);
+  const countdownPlayer = useAudioPlayer(countdownChime);
   const playedCueSecondRef = useRef<number | null>(null);
 
   useWorkoutWakeLock(Boolean(workout && profile && !summary), 'fitness-forge-build-workout');
@@ -96,11 +98,12 @@ export default function BuildWorkoutScreen() {
   }, []);
 
   useEffect(() => {
-    restPlayer.volume = 0.35;
+    restPlayer.volume = 0.9;
+    countdownPlayer.volume = 0.55;
     setAudioModeAsync({ playsInSilentMode: true }).catch(() => {
       // Audio cues are helpful but never allowed to block the workout.
     });
-  }, [restPlayer]);
+  }, [restPlayer, countdownPlayer]);
 
   useEffect(() => {
     if (!restTimer || restTimer.paused || restTimer.remainingSeconds <= 0) return;
@@ -118,8 +121,8 @@ export default function BuildWorkoutScreen() {
     const cue = getRestAudioCue(restTimer.remainingSeconds, restTimer.paused);
     if (!cue || playedCueSecondRef.current === restTimer.remainingSeconds) return;
     playedCueSecondRef.current = restTimer.remainingSeconds;
-    restPlayer.volume = cue === 'start' ? 0.9 : 0.35;
-    restPlayer.seekTo(0).then(() => restPlayer.play()).catch(() => {
+    const player = cue === 'start' ? restPlayer : countdownPlayer;
+    player.seekTo(0).then(() => player.play()).catch(() => {
       // The visual countdown remains authoritative if playback is unavailable.
     });
     if (cue === 'start') {
@@ -128,7 +131,7 @@ export default function BuildWorkoutScreen() {
       }, 900);
       return () => clearTimeout(timeout);
     }
-  }, [restPlayer, restTimer]);
+  }, [countdownPlayer, restPlayer, restTimer]);
 
   const updateSet = (exerciseIndex: number, setIndex: number, update: Partial<DraftSet>) => {
     setDraft((current) => current.map((exercise, index) => index !== exerciseIndex ? exercise : {

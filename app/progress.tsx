@@ -12,10 +12,12 @@ export default function ProgressScreen() {
   const router = useRouter();
   const { dataRevision } = useAuth();
   const [profile, setProfile] = useState<BuildProfile | null>(null);
-  const [results, setResults] = useState<BuildWorkoutResult[]>([]);
+  const [results, setResults] = useState<Array<Pick<BuildWorkoutResult, 'id' | 'completedAt' | 'exercises'>>>([]);
   useFocusEffect(useCallback(() => {
     Promise.all([loadBuildProfile(), loadWorkoutHistory()]).then(([saved, history]) => {
-      setProfile(saved); setResults(history.filter((item): item is BuildWorkoutResult => item.source === 'BUILD'));
+      setProfile(saved); setResults(history.flatMap((item) => item.source === 'BUILD'
+        ? [{ id: item.id, completedAt: item.completedAt, exercises: item.exercises }]
+        : item.linkedExercises?.length ? [{ id: item.id, completedAt: item.completedAt, exercises: item.linkedExercises }] : []));
     });
   }, [dataRevision]));
 
@@ -53,7 +55,7 @@ export default function ProgressScreen() {
       <View style={styles.stats}><View><Text style={styles.statValue}>{profile.pushup.sessionsCompleted}</Text><Text style={styles.statLabel}>sessions</Text></View><View><Text style={styles.statValue}>{profile.pushup.assessments.length}</Text><Text style={styles.statLabel}>assessments</Text></View></View>
       {profile.pushup.assessments.slice().reverse().map((assessment) => <Text key={assessment.id} style={styles.assessment}>{assessment.variation} · {assessment.reps} consecutive · {new Date(assessment.completedAt).toLocaleDateString()}</Text>)}
     </View> : null}
-    {(pullupHistory.length || pushupHistory.length) ? <Text style={styles.footer}>{results.length} BUILD session{results.length === 1 ? '' : 's'} recorded with full movement context.</Text> : null}
+    {(pullupHistory.length || pushupHistory.length) ? <Text style={styles.footer}>{results.length} tracked session{results.length === 1 ? '' : 's'} recorded with full movement context.</Text> : null}
   </ScrollView>;
 }
 

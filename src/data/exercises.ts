@@ -458,6 +458,33 @@ export const EXERCISES: Exercise[] = [
     tags: ['core', 'stability', 'recovery'],
     focus: ['core + back', 'recovery', 'full body'],
     cue: 'Move slowly without letting the ribs flare.'
+  },
+  {
+    id: 'bodyweight-plank',
+    name: 'Forearm Plank',
+    attachment: 'handles',
+    equipment: ['bodyweight'],
+    tags: ['core', 'stability'],
+    focus: ['core + back', 'full body', 'recovery'],
+    cue: 'Brace gently and keep shoulders, hips, and heels in one line.'
+  },
+  {
+    id: 'bodyweight-sit-up',
+    name: 'Sit-Up',
+    attachment: 'handles',
+    equipment: ['bodyweight'],
+    tags: ['core'],
+    focus: ['core + back', 'full body', 'endurance'],
+    cue: 'Move with control and avoid pulling on your neck.'
+  },
+  {
+    id: 'bodyweight-bicycle-crunch',
+    name: 'Bicycle Crunch',
+    attachment: 'handles',
+    equipment: ['bodyweight'],
+    tags: ['core'],
+    focus: ['core + back', 'full body', 'endurance'],
+    cue: 'Rotate through your trunk and keep the movement smooth.'
   }
 ];
 
@@ -470,7 +497,7 @@ export const CARDIO_LIBRARY: Record<string, string[]> = {
   sprint: [
     '20s fast high-knees + 40s walk x 6',
     '20s pogo hops + 20s fast feet + 20s walk x 5',
-    '15s ladder sprint pattern + 15s lateral shuffle + 30s reset x 6',
+    '15s ladder sprint pattern + 15s lateral shuffle + 30s rest x 6',
     '10s hard acceleration in place + 20s easy march x 8'
   ],
   endurance: [
@@ -486,13 +513,13 @@ export const CARDIO_LIBRARY: Record<string, string[]> = {
   ],
   'legs + power': [
     '5 box jumps + 20s walk x 5',
-    '20s pogo hops + 20s squat jumps + 20s reset x 4',
-    '8 skater hops/side + quick reset x 5',
+    '20s pogo hops + 20s squat jumps + 20s rest x 4',
+    '8 skater hops/side + quick rest x 5',
     '15s split-switch hops + 45s walk x 6'
   ],
   recovery: [
     '6 min nasal-breath march and shuffle flow',
-    '20s low pogo + 40s mobility reset x 6',
+    '20s low pogo + 40s easy mobility x 6',
     '5 min easy jump rope or ghost rope',
     '30s tall march + 30s side step x 5'
   ]
