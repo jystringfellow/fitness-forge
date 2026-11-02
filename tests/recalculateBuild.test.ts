@@ -30,6 +30,14 @@ const first = result('first', '2026-10-02T12:00:00.000Z');
 const second = result('second', '2026-10-04T12:00:00.000Z');
 const NOW = '2026-10-09T12:00:00.000Z';
 
+test('recalculation includes linked FORGE sets as capability evidence', () => {
+  const hybrid = { id: first.id, source: 'FORGE' as const, title: 'Custom circuit', completedAt: first.completedAt,
+    durationMinutes: 20, focus: 'full body', exerciseNames: ['Assisted Pull-Up', 'Dead Bug'], linkedExercises: first.exercises };
+  const next = recalculateBuildFromHistory(profile(), [second, hybrid], NOW).profile;
+  assert.equal(next.pullup.currentAssistanceLb, 70);
+  assert.equal(next.nextTemplateIndex, profile().nextTemplateIndex);
+});
+
 function provenWorkout(date: string): BuildWorkoutResult {
   const reps = [23, 28, 23, 23, 33];
   const prescribedSets = reps.map((targetReps, index) => ({ id: `pushup-${index}`, targetReps, targetType: index === 4 ? 'minimum' as const : 'fixed' as const }));

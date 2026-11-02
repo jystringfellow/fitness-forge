@@ -92,6 +92,7 @@ export interface BuildProfile {
   pushup: PushupProgressionState;
   accessories: Record<string, AccessoryState>;
   rest: BuildRestPreferences;
+  appliedForgeWorkoutIds?: string[];
 }
 
 export interface PrescribedSet {
@@ -176,6 +177,8 @@ export interface ForgeWorkoutHistoryEntry {
   durationMinutes: number;
   focus: string;
   exerciseNames: string[];
+  linkedExercises?: CompletedExercise[];
+  progressionSummary?: string[];
 }
 
 export type WorkoutHistoryEntry = BuildWorkoutResult | ForgeWorkoutHistoryEntry;

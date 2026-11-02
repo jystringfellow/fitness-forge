@@ -1,6 +1,6 @@
 # FORGE required exercises and BUILD targets
 
-Status: Proposed — future implementation.
+Status: Superseded in part by [custom circuits](custom-circuits.md). This document retains the earlier, broader design discussion.
 
 ## Problem
 
@@ -110,7 +110,7 @@ Use one stable session identity across local persistence and cloud backup. Keep 
 
 ## Out of scope
 
-Arbitrary exercise pinning, changing the challenge tables, automatic equipment substitutions, new goal types, and treating timed circuit performance as a substitute for logged BUILD sets.
+Changing the challenge tables, automatic equipment substitutions, new goal types, and treating timed circuit performance as a substitute for logged BUILD sets.
 
 ## Decisions to resolve during implementation
 

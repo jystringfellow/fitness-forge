@@ -20,11 +20,13 @@ export function recalculateBuildFromHistory(profile: BuildProfile, history: Work
   // Retained history may be incomplete. Use recent evidence rather than replaying
   // every session from an invented baseline or advancing the weekly template again.
   const seen = new Set<string>();
-  const results = history.filter((entry): entry is BuildWorkoutResult => {
-    if (entry.source !== 'BUILD' || entry.status === 'skipped' || seen.has(entry.id)
-      || !Number.isFinite(Date.parse(entry.completedAt)) || Date.parse(entry.completedAt) < Date.parse(profile.createdAt)) return false;
+  const results = history.flatMap((entry): Array<Pick<BuildWorkoutResult, 'id' | 'completedAt' | 'exercises'>> => {
+    const exercises = entry.source === 'BUILD' ? entry.exercises : entry.linkedExercises ?? [];
+    if (!exercises.length || seen.has(entry.id) || !Number.isFinite(Date.parse(entry.completedAt))
+      || Date.parse(entry.completedAt) < Date.parse(profile.createdAt)
+      || !exercises.some((exercise) => exercise.completedSets.some((set) => set.status === 'completed'))) return [];
     seen.add(entry.id);
-    return true;
+    return [{ id: entry.id, completedAt: entry.completedAt, exercises }];
   }).sort((a, b) => Date.parse(a.completedAt) - Date.parse(b.completedAt) || a.id.localeCompare(b.id));
   let next = { ...profile, updatedAt: now };
   const summary: string[] = [];

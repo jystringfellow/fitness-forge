@@ -2,27 +2,17 @@ import { useEffect, useRef, useState } from 'react';
 import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 import * as Speech from 'expo-speech';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useWorkoutWakeLock } from '@/hooks/useWorkoutWakeLock';
-import { loadCurrentWorkout, setCurrentWorkout } from '@/storage/workoutStorage';
+import { displayStepText, hasLoggedLinkedSet, nextStepAnnouncement, shouldAnnounceNextStep, shouldPlayRestCountdownCue, shouldWaitForLinkedLog } from '@/lib/forgeWorkoutFlow';
+import { ForgeSetResult, loadCurrentWorkout, loadForgeSetResults, saveForgeSetResults, saveForgeStepIndex, setCurrentWorkout } from '@/storage/workoutStorage';
 import { recordForgeCompletion } from '@/storage/appStorage';
 import { brandIcon, theme } from '@/theme/brand';
 import { WorkoutIntervalStep, WorkoutPlan } from '@/types/workout';
 
 type TimerState = 'idle' | 'running' | 'paused' | 'completed';
 const transitionChime = require('../assets/timer-switch.wav');
-const NEXT_UP_PROMPTS = [
-  'Next up',
-  'Get ready for',
-  'Coming in hot',
-  'On deck',
-  'Coming up',
-  'Brace for',
-  'Set up for',
-  'Move into',
-  'Lock in for'
-];
-
+const countdownChime = require('../assets/timer-countdown.wav');
 export default function WorkoutScreen() {
   const params = useLocalSearchParams<{ plan?: string }>();
   const [plan, setPlan] = useState<WorkoutPlan | null>(null);
@@ -88,18 +78,27 @@ export default function WorkoutScreen() {
 function TimerView({ plan }: { plan: WorkoutPlan }) {
   const router = useRouter();
   const steps = plan.intervalSteps?.length ? plan.intervalSteps : [];
-  const [timerState, setTimerState] = useState<TimerState>('idle');
-  const [currentStepIndex, setCurrentStepIndex] = useState<number>(0);
+  const [timerState, setTimerState] = useState<TimerState>(plan.currentStepIndex === steps.length ? 'completed' : 'idle');
+  const [currentStepIndex, setCurrentStepIndex] = useState<number>(plan.currentStepIndex ?? 0);
   const [repCount, setRepCount] = useState<number>(0);
-  const [timeRemaining, setTimeRemaining] = useState<number>(() => steps[0]?.durationSecs ?? 0);
+  const [timeRemaining, setTimeRemaining] = useState<number>(() => steps[plan.currentStepIndex ?? 0]?.durationSecs ?? 0);
+  const [setResults, setSetResults] = useState<ForgeSetResult[]>([]);
+  const [linkedReps, setLinkedReps] = useState('');
+  const [linkedAssistance, setLinkedAssistance] = useState(0);
+  const [savingSet, setSavingSet] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const transitionPlayer = useAudioPlayer(transitionChime);
+  const restCuePlayer = useAudioPlayer(countdownChime);
   const recordedCompletionRef = useRef(false);
+  const linkedRepsInputRef = useRef<TextInput>(null);
 
   useWorkoutWakeLock(timerState !== 'completed', 'fitness-forge-forge-workout');
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const spokenWarningRef = useRef<string | null>(null);
+  const playedRestCueRef = useRef<string | null>(null);
   const currentStep = steps[currentStepIndex] ?? null;
+  const currentLinkedLogged = hasLoggedLinkedSet(currentStep, setResults);
   const nextStep = steps[currentStepIndex + 1] ?? null;
   const progressPercent = steps.length ? Math.min(100, Math.round((currentStepIndex / steps.length) * 100)) : 0;
   const timerToneStyle = currentStep?.isPrompt
@@ -107,6 +106,41 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
     : currentStep?.isRest
       ? styles.restTone
       : styles.workTone;
+
+  useEffect(() => {
+    loadForgeSetResults(plan.createdAt).then(setSetResults).catch(() => {});
+  }, [plan.createdAt]);
+
+  useEffect(() => {
+    const linked = currentStep?.linkedSet;
+    if (!linked) return;
+    const logged = setResults.find((item) => item.exerciseId === linked.exerciseId && item.setIndex === linked.setIndex);
+    setLinkedReps(logged ? String(logged.actualReps) : '');
+    setLinkedAssistance(logged?.actualAssistanceLb ?? linked.targetAssistanceLb ?? 0);
+  }, [currentStepIndex, setResults, plan.createdAt]);
+
+  const saveLinkedSet = async (status: ForgeSetResult['status'], advanceAfterSave = false) => {
+    const linked = currentStep?.linkedSet;
+    if (!linked || savingSet) return;
+    if (status === 'completed' && linkedReps === '') {
+      setSaveError('Enter the reps you actually completed.');
+      linkedRepsInputRef.current?.focus();
+      return;
+    }
+    setSavingSet(true);
+    try {
+      const result: ForgeSetResult = { exerciseId: linked.exerciseId, setIndex: linked.setIndex,
+        actualReps: status === 'completed' ? Number(linkedReps) : 0, actualAssistanceLb: linked.targetAssistanceLb === undefined ? undefined : linkedAssistance, status };
+      const latest = await loadForgeSetResults(plan.createdAt);
+      const next = [...latest.filter((item) => item.exerciseId !== linked.exerciseId || item.setIndex !== linked.setIndex), result];
+      await saveForgeSetResults(plan.createdAt, next);
+      setSetResults(next);
+      setSaveError('');
+      if (!currentStep?.isRest || timeRemaining === 0 || advanceAfterSave) goToStep(currentStepIndex + 1, true);
+    } catch {
+      setSaveError('Could not save this set. Try again.');
+    } finally { setSavingSet(false); }
+  };
 
   const playTransitionSound = () => {
     transitionPlayer
@@ -124,6 +158,7 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
     if (nextIndex >= steps.length) {
       setTimerState('completed');
       setCurrentStepIndex(steps.length);
+      saveForgeStepIndex(plan.createdAt, steps.length).catch(() => {});
       setRepCount(0);
       setTimeRemaining(0);
       return;
@@ -132,6 +167,7 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
     const nextStep = steps[nextIndex];
     playTransitionSound();
     setCurrentStepIndex(nextIndex);
+    saveForgeStepIndex(plan.createdAt, nextIndex).catch(() => {});
     setRepCount(0);
     setTimeRemaining(nextStep.durationSecs);
     setTimerState(autoStart && nextStep.durationSecs > 0 && !nextStep.reps && !nextStep.isPrompt ? 'running' : 'idle');
@@ -140,10 +176,11 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
   useEffect(() => {
     Speech.stop();
     spokenWarningRef.current = null;
-    setTimerState('idle');
-    setCurrentStepIndex(0);
+    playedRestCueRef.current = null;
+    setTimerState(plan.currentStepIndex === steps.length ? 'completed' : 'idle');
+    setCurrentStepIndex(plan.currentStepIndex ?? 0);
     setRepCount(0);
-    setTimeRemaining(steps[0]?.durationSecs ?? 0);
+    setTimeRemaining(steps[plan.currentStepIndex ?? 0]?.durationSecs ?? 0);
 
     return () => {
       Speech.stop();
@@ -153,20 +190,30 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
   useEffect(() => {
     if (timerState === 'completed' && !recordedCompletionRef.current) {
       recordedCompletionRef.current = true;
-      recordForgeCompletion(plan).catch(() => {
+      loadForgeSetResults(plan.createdAt).then((results) => recordForgeCompletion(plan, results)).then(() => setSaveError('')).catch(() => {
         recordedCompletionRef.current = false;
+        setSaveError('Could not save this workout. Tap Retry save.');
       });
     }
   }, [plan, timerState]);
 
+  const retryCompletion = () => {
+    if (recordedCompletionRef.current) return;
+    recordedCompletionRef.current = true;
+    loadForgeSetResults(plan.createdAt).then((results) => recordForgeCompletion(plan, results))
+      .then(() => setSaveError(''))
+      .catch(() => { recordedCompletionRef.current = false; setSaveError('Could not save this workout. Tap Retry save.'); });
+  };
+
   useEffect(() => {
     transitionPlayer.volume = 0.75;
+    restCuePlayer.volume = 0.35;
     setAudioModeAsync({
       playsInSilentMode: true
     }).catch(() => {
       // The sound still works on most targets when audio mode setup is unavailable.
     });
-  }, [transitionPlayer]);
+  }, [transitionPlayer, restCuePlayer]);
 
   useEffect(() => {
     if (intervalRef.current) {
@@ -178,7 +225,10 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
       intervalRef.current = setInterval(() => {
         setTimeRemaining((prev) => {
           if (prev <= 1) {
-            setTimeout(() => goToStep(currentStepIndex + 1, true), 0);
+            setTimeout(() => {
+              if (shouldWaitForLinkedLog(currentStep, setResults)) setTimerState('idle');
+              else goToStep(currentStepIndex + 1, true);
+            }, 0);
             return 0;
           }
           return prev - 1;
@@ -192,27 +242,32 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
         intervalRef.current = null;
       }
     };
-  }, [timerState, currentStepIndex]);
+  }, [timerState, currentStepIndex, currentLinkedLogged]);
 
   useEffect(() => {
-    if (
-      timerState !== 'running' ||
-      !currentStep ||
-      !nextStep ||
-      currentStep.isPrompt ||
-      currentStep.durationSecs <= 7 ||
-      timeRemaining !== 7
-    ) {
+    if (!shouldPlayRestCountdownCue(currentStep, nextStep, timeRemaining, timerState === 'running')) return;
+    const cueKey = `${currentStepIndex}-${timeRemaining}`;
+    if (playedRestCueRef.current === cueKey) return;
+    playedRestCueRef.current = cueKey;
+    restCuePlayer.seekTo(0).then(() => restCuePlayer.play()).catch(() => {
+      // The visual timer remains authoritative if playback is unavailable.
+    });
+  }, [currentStep, currentStepIndex, nextStep, restCuePlayer, timeRemaining, timerState]);
+
+  useEffect(() => {
+    if (!shouldAnnounceNextStep(currentStep, nextStep, timeRemaining, timerState === 'running')) {
       return;
     }
 
-    const announcementKey = `${currentStepIndex}-${nextStep.text}`;
+    const announcement = nextStepAnnouncement(nextStep, steps[currentStepIndex + 2] ?? null);
+    if (!announcement) return;
+    const announcementKey = `${currentStepIndex}-${announcement}`;
     if (spokenWarningRef.current === announcementKey) {
       return;
     }
 
     spokenWarningRef.current = announcementKey;
-    Speech.speak(spokenTransitionAnnouncement(nextStep), {
+    Speech.speak(announcement, {
       rate: 0.92
     });
   }, [currentStep, currentStepIndex, nextStep, timeRemaining, timerState]);
@@ -252,7 +307,7 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
   };
 
   const currentExerciseName = () => {
-    return currentStep?.text ?? 'DONE -- you are amazing!';
+    return currentStep ? displayStepText(currentStep) : 'DONE -- you are amazing!';
   };
 
   const toggleTimer = () => {
@@ -260,10 +315,15 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
       return;
     }
 
-    if (timerState === 'running') {
+    if (currentStep.linkedSet && !currentStep.isRest) {
+      saveLinkedSet('completed').catch(() => {});
+    } else if (timerState === 'running') {
       setTimerState('paused');
     } else if (timerState === 'paused') {
       setTimerState('running');
+    } else if (currentStep.isRest && currentStep.linkedSet && timeRemaining === 0) {
+      if (currentLinkedLogged) goToStep(currentStepIndex + 1, true);
+      else saveLinkedSet('completed').catch(() => {});
     } else if (currentStep.isPrompt) {
       goToStep(currentStepIndex + 1, true);
     } else if (currentStep.reps) {
@@ -278,8 +338,10 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
   const resetTimer = () => {
     Speech.stop();
     spokenWarningRef.current = null;
+    playedRestCueRef.current = null;
     setTimerState('idle');
     setCurrentStepIndex(0);
+    saveForgeStepIndex(plan.createdAt, 0).catch(() => {});
     setRepCount(0);
     setTimeRemaining(steps[0]?.durationSecs ?? 0);
   };
@@ -313,6 +375,10 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
       return currentStep.isRest ? 'Rest' : 'Work';
     }
 
+    if (currentStep.isRest && currentStep.linkedSet && timeRemaining === 0) {
+      return currentLinkedLogged ? 'Ready for the next station' : 'Log reps to continue';
+    }
+
     if (currentStep.isPrompt) {
       return `Tap "${currentStep.actionLabel ?? 'Continue'}" to continue`;
     }
@@ -325,6 +391,7 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
   };
 
   const primaryLabel = () => {
+    if (currentStep?.linkedSet && !currentStep.isRest) return savingSet ? 'Saving…' : 'Record set';
     if (timerState === 'running') {
       return 'Pause';
     }
@@ -332,6 +399,8 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
     if (timerState === 'paused') {
       return 'Resume';
     }
+
+    if (currentStep?.isRest && currentStep.linkedSet && timeRemaining === 0) return savingSet ? 'Saving…' : currentLinkedLogged ? 'Continue' : 'Log reps to continue';
 
     if (currentStep?.isPrompt) {
       return currentStep.actionLabel ?? 'Continue';
@@ -365,6 +434,7 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
         <Text style={styles.headerTitle}>{plan.title}</Text>
         <Text style={styles.headerMeta}>Attachment: {plan.input.attachment}</Text>
         <Text style={styles.doneText}>DONE -- you are amazing!</Text>
+        {saveError ? <><Text style={styles.saveError}>{saveError}</Text><TouchableOpacity style={styles.nextButton} onPress={retryCompletion}><Text style={styles.nextButtonText}>Retry save</Text></TouchableOpacity></> : null}
 
         <View style={styles.block}>
           <Text style={styles.blockTitle}>Cardio / Plyo ({plan.cardioBlock[0].text})</Text>
@@ -424,7 +494,7 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
           <View style={[styles.sessionProgressFill, { width: `${progressPercent}%` }]} />
         </View>
         {nextStep ? (
-          <Text style={styles.upNext}>Next: {nextStep.text}</Text>
+          <Text style={styles.upNext}>Next: {displayStepText(nextStep)}</Text>
         ) : (
           <Text style={styles.upNext}>Final step</Text>
         )}
@@ -446,10 +516,20 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
         </TouchableOpacity>
       </View>
 
+      {currentStep?.linkedSet ? <View style={styles.linkedControls}>
+        <Text style={styles.line}>BUILD target: {currentStep.linkedSet.targetReps} reps{currentStep.linkedSet.targetAssistanceLb === undefined ? '' : ` · ${currentStep.linkedSet.targetAssistanceLb} lb assistance`}</Text>
+        <View style={styles.linkedRow}><Text style={styles.line}>Actual reps</Text><TouchableOpacity onPress={() => setLinkedReps(String(Math.max(0, Number(linkedReps || 0) - 1)))}><Text style={styles.linkedButton}>−</Text></TouchableOpacity><TextInput ref={linkedRepsInputRef} accessibilityLabel="Actual reps" keyboardType="number-pad" style={styles.linkedInput} value={linkedReps} onChangeText={(value) => setLinkedReps(value.replace(/[^0-9]/g, ''))} placeholder="Enter reps" placeholderTextColor={theme.colors.textSubtle} /><TouchableOpacity onPress={() => setLinkedReps(String(Number(linkedReps || 0) + 1))}><Text style={styles.linkedButton}>+</Text></TouchableOpacity></View>
+        {currentStep.linkedSet.targetAssistanceLb !== undefined ? <View style={styles.linkedRow}><Text style={styles.line}>Assistance (lb)</Text><TouchableOpacity onPress={() => setLinkedAssistance(Math.max(0, linkedAssistance - 5))}><Text style={styles.linkedButton}>−5</Text></TouchableOpacity><Text style={styles.line}>{linkedAssistance}</Text><TouchableOpacity onPress={() => setLinkedAssistance(linkedAssistance + 5)}><Text style={styles.linkedButton}>+5</Text></TouchableOpacity></View> : null}
+        <Text style={styles.line}>{currentStep.isRest ? 'Rest is running while you log your reps.' : 'Record what you completed.'} The next BUILD target uses these results.</Text>
+        {currentStep.isRest ? <TouchableOpacity style={styles.logButton} onPress={() => saveLinkedSet('completed').catch(() => {})}><Text style={styles.logButtonText}>{savingSet ? 'Saving…' : currentLinkedLogged ? 'Update reps' : 'Record reps'}</Text></TouchableOpacity> : null}
+        {currentStep.isRest && currentLinkedLogged ? <Text style={styles.loggedText}>Set recorded. Rest continues.</Text> : null}
+        {saveError ? <Text style={styles.saveError}>{saveError}</Text> : null}
+      </View> : null}
+
       <View style={styles.nextButtonContainer}>
         {currentStep && !currentStep.isPrompt && (
-          <TouchableOpacity style={styles.nextButton} onPress={() => goToStep(currentStepIndex + 1, true)}>
-            <Text style={styles.nextButtonText}>Skip to Next</Text>
+          <TouchableOpacity style={styles.nextButton} onPress={() => currentStep.linkedSet ? currentStep.isRest && currentLinkedLogged ? goToStep(currentStepIndex + 1, true) : saveLinkedSet('skipped', true).catch(() => {}) : goToStep(currentStepIndex + 1, true)}>
+            <Text style={styles.nextButtonText}>{currentStep.linkedSet ? currentStep.isRest ? currentLinkedLogged ? 'Skip rest' : 'Skip log and rest' : 'Skip set' : 'Skip to Next'}</Text>
           </TouchableOpacity>
         )}
         {currentStep?.skipLabel && (
@@ -459,7 +539,7 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
         )}
       </View>
 
-      <ScrollView style={styles.previewSection} contentContainerStyle={styles.previewContent}>
+      {!currentStep?.linkedSet ? <ScrollView style={styles.previewSection} contentContainerStyle={styles.previewContent}>
         <View style={styles.block}>
           <Text style={styles.blockTitle}>Cardio / Plyo ({plan.cardioBlock[0].text})</Text>
           {plan.cardioBlock.slice(1).map((item, idx) => (
@@ -484,58 +564,9 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
         </View>
 
         {plan.note ? <Text style={styles.note}>{plan.note}</Text> : null}
-      </ScrollView>
+      </ScrollView> : null}
     </View>
   );
-}
-
-function spokenTransitionAnnouncement(nextStep: WorkoutIntervalStep): string {
-  if (nextStep.isPrompt) {
-    return nextStep.text;
-  }
-
-  const nextLabel = nextStep.isRest ? 'Next up' : pickNextUpPrompt();
-
-  return `${nextLabel}: ${spokenStepName(nextStep)} for ${spokenStepDuration(nextStep)}.`;
-}
-
-function pickNextUpPrompt(): string {
-  return NEXT_UP_PROMPTS[Math.floor(Math.random() * NEXT_UP_PROMPTS.length)];
-}
-
-function spokenStepName(step: WorkoutIntervalStep): string {
-  if (step.exerciseName) {
-    return step.exerciseName;
-  }
-
-  if (step.isRest) {
-    return 'reset';
-  }
-
-  return step.text;
-}
-
-function spokenStepDuration(step: WorkoutIntervalStep): string {
-  if (step.reps) {
-    return `${step.reps} ${step.reps === 1 ? 'rep' : 'reps'}`;
-  }
-
-  if (step.durationSecs <= 0) {
-    return 'as long as you need';
-  }
-
-  const minutes = Math.floor(step.durationSecs / 60);
-  const seconds = step.durationSecs % 60;
-
-  if (minutes === 0) {
-    return `${seconds} ${seconds === 1 ? 'second' : 'seconds'}`;
-  }
-
-  if (seconds === 0) {
-    return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`;
-  }
-
-  return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'} ${seconds} ${seconds === 1 ? 'second' : 'seconds'}`;
 }
 
 const styles = StyleSheet.create({
@@ -608,6 +639,14 @@ const styles = StyleSheet.create({
   progressText: { color: theme.colors.lime, textAlign: 'center', fontSize: 15, fontWeight: '800' },
 
   controls: { flexDirection: 'row', gap: 12, padding: 14, backgroundColor: theme.colors.background },
+  linkedControls: { backgroundColor: theme.colors.surface, padding: 14, gap: 8 },
+  linkedRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  linkedButton: { color: theme.colors.lime, fontWeight: '900', fontSize: 24, minWidth: 42, textAlign: 'center' },
+  linkedInput: { color: theme.colors.text, borderColor: theme.colors.border, borderWidth: 1, borderRadius: 8, padding: 8, minWidth: 84, textAlign: 'center' },
+  logButton: { backgroundColor: theme.colors.lime, borderRadius: 8, padding: 11, alignItems: 'center' },
+  logButtonText: { color: theme.colors.ink, fontWeight: '900' },
+  loggedText: { color: theme.colors.lime, fontWeight: '800' },
+  saveError: { color: theme.colors.purple, paddingHorizontal: 14, fontWeight: '800' },
   controlButton: { flex: 1, backgroundColor: theme.colors.borderMuted, borderRadius: 8, paddingVertical: 16, alignItems: 'center' },
   playButton: { flex: 1, backgroundColor: theme.colors.lime, borderRadius: 8, paddingVertical: 16, alignItems: 'center' },
   pauseButton: { flex: 1, backgroundColor: theme.colors.purple, borderRadius: 8, paddingVertical: 16, alignItems: 'center' },

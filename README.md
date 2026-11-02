@@ -16,6 +16,8 @@ The first two capabilities are:
 
 FORGE answers “Give me a good workout today.” It preserves the existing randomized generator, including time, focus, energy, attachment selection, cardio/plyometric work, interval timing, spoken transitions, and optional finishers.
 
+FORGE also supports custom circuits with fixed exercises or a random core station. Choose timed or rep stations, how often they appear across three to five rounds, and let FORGE fill the remaining space. Saved BUILD pull-up and push-up targets can be linked into the circuit as tracked sets, with an optional timed work window followed by actual rep and assistance logging. Linked results advance only the matching BUILD capability and appear in the same FORGE history entry.
+
 Both sources write to one workout history while retaining source-specific context. BUILD records variation, assistance/load, program position, and planned-versus-actual performance. FORGE records its generated session summary.
 
 BUILD prescriptions also include configurable recovery guidance. Dense defaults use 60 seconds for pull-ups, push-ups, and strength accessories, plus 45 seconds for conditioning and core. BUILD settings offer short presets, and push-ups can optionally return to the original table’s 45–120-second rest. Completing a non-final set starts a countdown that can be paused, extended, or skipped; longer rest is always allowed. During execution, the player keeps the screen awake, focuses on the current set or rest interval, previews the next action, beeps for the final five rest seconds, and plays a stronger transition cue when it is time to move.

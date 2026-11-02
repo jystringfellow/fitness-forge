@@ -1,7 +1,8 @@
-import { useState } from 'react';
-import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { generateWorkout } from '@/lib/generateWorkout';
+import { EXERCISES } from '@/data/exercises';
+import { buildTargetsMatchPlan, formatCircuitRoundPreview, generateWorkout } from '@/lib/generateWorkout';
 import { brandIcon, theme } from '@/theme/brand';
 import {
   ATTACHMENT_OPTIONS,
@@ -12,9 +13,11 @@ import {
   Energy,
   Focus,
   TimeOption,
+  FixedStation,
   WorkoutPlan
 } from '@/types/workout';
-import { setCurrentWorkout } from '@/storage/workoutStorage';
+import { loadBuildProfile } from '@/storage/appStorage';
+import { loadFixedStations, saveFixedStations, setCurrentWorkout } from '@/storage/workoutStorage';
 
 function Chip<T extends string | number>({
   label,
@@ -43,11 +46,43 @@ export default function ForgeScreen() {
   const [focus, setFocus] = useState<Focus>('full body');
   const [attachment, setAttachment] = useState<Attachment>('recommended');
   const [generatedPlan, setGeneratedPlan] = useState<WorkoutPlan | null>(null);
+  const [fixedStations, setFixedStations] = useState<FixedStation[]>([]);
+  const [circuitRounds, setCircuitRounds] = useState<3 | 4 | 5>(4);
+  const [showExercisePicker, setShowExercisePicker] = useState(false);
+  const [exerciseSearch, setExerciseSearch] = useState('');
+  const [generationError, setGenerationError] = useState('');
+
+  useEffect(() => { loadFixedStations().then(setFixedStations).catch(() => {}); }, []);
+
+  const updateStations = (stations: FixedStation[]) => {
+    setFixedStations(stations);
+    setGeneratedPlan(null);
+    setGenerationError('');
+    saveFixedStations(stations).catch(() => {});
+  };
+
+  const addStation = (exerciseId: string) => {
+    if (fixedStations.some((item) => item.exerciseId === exerciseId)) return;
+    updateStations([...fixedStations, {
+      id: `${exerciseId}-${Date.now()}`, exerciseId,
+      mode: exerciseId.startsWith('build-') ? 'build' : 'time', seconds: exerciseId.startsWith('build-') ? undefined : 30, reps: 10, frequency: 'every-round'
+    }]);
+    setShowExercisePicker(false);
+    setExerciseSearch('');
+  };
+
+  const editStation = (id: string, update: Partial<FixedStation>) => updateStations(fixedStations.map((item) => item.id === id ? { ...item, ...update } : item));
 
   const clearGeneratedPlan = () => setGeneratedPlan(null);
 
-  const onGenerate = () => {
-    setGeneratedPlan(generateWorkout({ time, energy, focus, attachment }, true));
+  const onGenerate = async () => {
+    try {
+      const profile = await loadBuildProfile();
+      setGeneratedPlan(generateWorkout({ time, energy, focus, attachment, circuitRounds, fixedStations }, true, profile ?? undefined));
+      setGenerationError('');
+    } catch (error) {
+      setGenerationError(error instanceof Error ? error.message : 'Could not create this workout.');
+    }
   };
 
   const onStartWorkout = async () => {
@@ -55,6 +90,15 @@ export default function ForgeScreen() {
       return;
     }
 
+    if (generatedPlan.linkedExercises?.length) {
+      const profile = await loadBuildProfile();
+      if (!profile?.active) { setGenerationError('Your BUILD profile is no longer active. Regenerate to review this workout.'); return; }
+      if (!buildTargetsMatchPlan(profile, generatedPlan.linkedExercises)) {
+        setGeneratedPlan(generateWorkout({ time, energy, focus, attachment, circuitRounds, fixedStations }, true, profile));
+        setGenerationError('Your BUILD targets changed. Review the refreshed workout before starting.');
+        return;
+      }
+    }
     await setCurrentWorkout(generatedPlan);
     router.push('/workout');
   };
@@ -137,7 +181,28 @@ export default function ForgeScreen() {
                 />
               ))}
             </View>
+
+            {fixedStations.length ? <><Text style={styles.section}>Circuit rounds</Text><View style={styles.row}>{([3, 4, 5] as const).map((count) => <Chip key={count} label={count} active={circuitRounds === count} onPress={() => { setCircuitRounds(count); clearGeneratedPlan(); }} />)}</View></> : null}
+
+            <Text style={styles.section}>Fixed stations</Text>
+            <Text style={styles.helper}>Keep these in your circuit. FORGE fills the other stations.</Text>
+            {fixedStations.map((station) => {
+              const name = station.exerciseId === 'random-core' ? 'Random bodyweight core' : station.exerciseId === 'build-pull-up' ? 'BUILD pull-ups' : station.exerciseId === 'build-push-up' ? 'BUILD push-ups' : EXERCISES.find((item) => item.id === station.exerciseId)?.name ?? station.exerciseId;
+              return <View key={station.id} style={styles.stationCard}>
+                <View style={styles.stationTop}><Text style={styles.stationName}>{name}</Text><TouchableOpacity onPress={() => updateStations(fixedStations.filter((item) => item.id !== station.id))}><Text style={styles.remove}>Remove</Text></TouchableOpacity></View>
+                {station.mode === 'build' ? <><Text style={styles.helper}>Uses your saved BUILD targets, actual reps, and assistance. Appears once per prescribed set.</Text><Text style={styles.helper}>Work window</Text><View style={styles.row}><Chip label="Rep paced" active={!station.seconds} onPress={() => editStation(station.id, { seconds: undefined })} />{[20, 25, 30].map((seconds) => <Chip key={seconds} label={`${seconds}s`} active={station.seconds === seconds} onPress={() => editStation(station.id, { seconds })} />)}</View></> : <>
+                  <View style={styles.row}><Chip label="Time" active={station.mode === 'time'} onPress={() => editStation(station.id, { mode: 'time' })} /><Chip label="Reps" active={station.mode === 'reps'} onPress={() => editStation(station.id, { mode: 'reps' })} /></View>
+                  <View style={styles.row}>{(station.mode === 'time' ? [20, 25, 30, 45] : [5, 10, 15, 20]).map((value) => <Chip key={value} label={station.mode === 'time' ? `${value}s` : `${value} reps`} active={station.mode === 'time' ? station.seconds === value : station.reps === value} onPress={() => editStation(station.id, station.mode === 'time' ? { seconds: value } : { reps: value })} />)}</View>
+                  <Text style={styles.helper}>How often?</Text>
+                  <View style={styles.row}><Chip label="Every round" active={station.frequency === 'every-round'} onPress={() => editStation(station.id, { frequency: 'every-round' })} />{Array.from({ length: circuitRounds }, (_, index) => index + 1).map((count) => <Chip key={count} label={`${count}×`} active={station.frequency === count} onPress={() => editStation(station.id, { frequency: count })} />)}</View>
+                </>}
+              </View>;
+            })}
+            <View style={styles.row}><Chip label="+ Exercise" active={showExercisePicker} onPress={() => setShowExercisePicker(!showExercisePicker)} /><Chip label="+ Random core" active={false} onPress={() => addStation('random-core')} /><Chip label="+ BUILD pull-ups" active={false} onPress={() => addStation('build-pull-up')} /><Chip label="+ BUILD push-ups" active={false} onPress={() => addStation('build-push-up')} /></View>
+            {showExercisePicker ? <View style={styles.stationCard}><TextInput style={styles.search} placeholder="Search exercises" placeholderTextColor={theme.colors.textSubtle} value={exerciseSearch} onChangeText={setExerciseSearch} />{EXERCISES.filter((exercise) => exercise.name.toLowerCase().includes(exerciseSearch.toLowerCase()) && !fixedStations.some((station) => station.exerciseId === exercise.id)).slice(0, 20).map((exercise) => <TouchableOpacity key={exercise.id} style={styles.searchItem} onPress={() => addStation(exercise.id)}><Text style={styles.stationName}>{exercise.name}</Text></TouchableOpacity>)}</View> : null}
           </View>
+
+          {generationError ? <Text style={styles.error}>{generationError}</Text> : null}
 
           <TouchableOpacity style={styles.generateButton} onPress={onGenerate}>
             <Text style={styles.generateText}>Generate Workout</Text>
@@ -145,11 +210,13 @@ export default function ForgeScreen() {
         </>
       ) : (
         <View style={styles.reviewPanel}>
+          {generationError ? <Text style={styles.error}>{generationError}</Text> : null}
           <View style={styles.reviewTopline}>
             <Text style={styles.section}>Generated workout</Text>
             <Text style={styles.reviewBadge}>{generatedPlan.mainBlock.rounds} rounds</Text>
           </View>
           <Text style={styles.reviewTitle}>{generatedPlan.title}</Text>
+          {generatedPlan.estimatedDurationSecs ? <Text style={styles.helper}>Estimated session: {Math.ceil(generatedPlan.estimatedDurationSecs / 60)} min. BUILD set timing depends on your pace.</Text> : null}
           <View style={styles.choiceSummary}>
             <Text style={styles.choicePill}>{generatedPlan.input.time} min</Text>
             <Text style={styles.choicePill}>{formatLabel(generatedPlan.input.energy)}</Text>
@@ -164,14 +231,18 @@ export default function ForgeScreen() {
           <View style={styles.previewRow}>
             <Text style={styles.previewLabel}>Main</Text>
             <Text style={styles.previewValue}>
-              {generatedPlan.mainBlock.format ?? `${generatedPlan.mainBlock.workSeconds}s / ${generatedPlan.mainBlock.restSeconds}s`}
+              {generatedPlan.input.fixedStations?.length
+                ? `${generatedPlan.mainBlock.format} · Rest for ${generatedPlan.mainBlock.restSeconds}s`
+                : generatedPlan.mainBlock.format ?? `${generatedPlan.mainBlock.workSeconds}s / ${generatedPlan.mainBlock.restSeconds}s`}
             </Text>
           </View>
           <View style={styles.moveList}>
-            {generatedPlan.mainBlock.exercises.map((exercise) => (
+            {generatedPlan.input.fixedStations?.length ? Array.from({ length: generatedPlan.mainBlock.rounds }, (_, index) => index + 1).map((round) => <View key={round}><Text style={styles.moveItem}>Round {round}</Text><Text style={styles.helper}>{formatCircuitRoundPreview(generatedPlan, round)}</Text></View>) : generatedPlan.mainBlock.exercises.map((exercise) => (
               <Text key={exercise.id} style={styles.moveItem}>{exercise.name}</Text>
             ))}
           </View>
+          {generatedPlan.linkedExercises?.map((exercise) => <Text key={exercise.id} style={styles.note}>BUILD target · {exercise.name}: {exercise.sets.map((set) => `${set.targetReps}${set.targetType === 'minimum' ? '+' : ''}`).join(' / ')}{exercise.sets[0]?.targetAssistanceLb !== undefined ? ` · ${exercise.sets[0].targetAssistanceLb} lb assist` : ''}</Text>)}
+          {generatedPlan.linkedExercises?.length ? <Text style={styles.helper}>BUILD equipment: {[...new Set(generatedPlan.linkedExercises.flatMap((exercise) => exercise.equipment))].join(', ').replace(/-/g, ' ')}. Have this setup available before starting.</Text> : null}
           {generatedPlan.note ? <Text style={styles.note}>{generatedPlan.note}</Text> : null}
 
           <View style={styles.reviewActions}>
@@ -312,5 +383,13 @@ const styles = StyleSheet.create({
   },
   secondaryText: { color: theme.colors.textSoft, fontWeight: '900' },
   libraryLink: { alignItems: 'center', paddingVertical: 10 },
-  libraryLinkText: { color: theme.colors.purple, fontWeight: '800' }
+  libraryLinkText: { color: theme.colors.purple, fontWeight: '800' },
+  helper: { color: theme.colors.textMuted, fontSize: 13, lineHeight: 18 },
+  stationCard: { backgroundColor: theme.colors.surfaceMuted, borderColor: theme.colors.border, borderWidth: 1, borderRadius: 8, padding: 10, gap: 8 },
+  stationTop: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
+  stationName: { color: theme.colors.text, fontWeight: '800', flex: 1 },
+  remove: { color: theme.colors.purple, fontWeight: '800' },
+  search: { color: theme.colors.text, borderColor: theme.colors.border, borderWidth: 1, borderRadius: 8, padding: 10 },
+  searchItem: { borderBottomColor: theme.colors.borderMuted, borderBottomWidth: 1, paddingVertical: 6 },
+  error: { color: theme.colors.purple, fontWeight: '800' }
 });

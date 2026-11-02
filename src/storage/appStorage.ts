@@ -4,7 +4,11 @@ import { getInitialPushupProgramWeek, selectPushupBracket } from '@/data/pushupP
 import { BuildProfile, BuildWorkoutPrescription, WorkoutHistoryEntry } from '@/types/build';
 import { WorkoutPlan } from '@/types/workout';
 import { MAX_LOCAL_HISTORY } from '@/lib/cloudMerge';
+import { getNextPullupState } from '@/lib/pullupProgression';
+import { getNextPushupState } from '@/lib/pushupProgression';
 import { markCloudDataDirty } from '@/storage/cloudMetadata';
+import { ForgeSetResult } from '@/storage/workoutStorage';
+import { CompletedExercise } from '@/types/build';
 
 const KEYS = {
   profile: 'fitness_forge/build_profile_v1',
@@ -79,7 +83,44 @@ export async function loadBuildProfile(): Promise<BuildProfile | null> {
       AsyncStorage.removeItem(KEYS.activeBuildWorkout)
     ]);
   }
-  return migrated;
+  if (!migrated) return null;
+  const history = await loadWorkoutHistory();
+  const applied = new Set(migrated.appliedForgeWorkoutIds ?? []);
+  let current = migrated;
+  for (const entry of [...history].reverse()) {
+    if (entry.source !== 'FORGE' || !entry.linkedExercises?.length || applied.has(entry.id) || Date.parse(entry.completedAt) < Date.parse(migrated.createdAt)) continue;
+    current = advanceLinkedCapabilities(current, entry.linkedExercises, entry.completedAt);
+    applied.add(entry.id);
+  }
+  if (applied.size !== (migrated.appliedForgeWorkoutIds ?? []).length) {
+    current = { ...current, appliedForgeWorkoutIds: [...applied].slice(-MAX_LOCAL_HISTORY) };
+    await saveBuildProfile(current);
+  }
+  return current;
+}
+
+function advanceLinkedCapabilities(profile: BuildProfile, exercises: CompletedExercise[], completedAt: string): BuildProfile {
+  let next = { ...profile, updatedAt: completedAt };
+  const pullup = exercises.find((item) => item.kind === 'pull-up' && item.completedSets.some((set) => set.status === 'completed') && matchesCurrentCapability(profile, item));
+  const pushup = exercises.find((item) => item.kind === 'push-up' && item.completedSets.some((set) => set.status === 'completed') && matchesCurrentCapability(profile, item));
+  if (pullup && next.pullup.enabled) next = { ...next, pullup: getNextPullupState(next.pullup, pullup, completedAt).state };
+  if (pushup && next.pushup.enabled) next = { ...next, pushup: getNextPushupState(next.pushup, pushup, completedAt).state };
+  return next;
+}
+
+function matchesCurrentCapability(profile: BuildProfile, exercise: CompletedExercise): boolean {
+  if (exercise.kind === 'pull-up') {
+    return exercise.variation === (profile.pullup.currentAssistanceLb === 0 ? 'unassisted' : 'assisted')
+      && JSON.stringify(exercise.prescribedSets.map((set) => set.targetReps)) === JSON.stringify(profile.pullup.targetReps)
+      && exercise.prescribedSets.every((set) => (set.targetAssistanceLb ?? 0) === profile.pullup.currentAssistanceLb);
+  }
+  if (exercise.kind === 'push-up') {
+    const current = createBuildWorkout(profile).exercises.find((item) => item.kind === 'push-up');
+    return Boolean(current && exercise.variation === current.variation
+      && JSON.stringify(exercise.prescribedSets.map((set) => [set.targetReps, set.targetType]))
+        === JSON.stringify(current.sets.map((set) => [set.targetReps, set.targetType])));
+  }
+  return false;
 }
 
 export async function saveBuildProfile(profile: BuildProfile): Promise<void> {
@@ -142,7 +183,32 @@ export function prependUniqueHistory(history: WorkoutHistoryEntry[], entry: Work
   return [entry, ...history].slice(0, MAX_LOCAL_HISTORY);
 }
 
-export async function recordForgeCompletion(plan: WorkoutPlan): Promise<void> {
+export async function recordForgeCompletion(plan: WorkoutPlan, setResults: ForgeSetResult[] = []): Promise<void> {
+  const linkedExercises: CompletedExercise[] = (plan.linkedExercises ?? []).map((exercise) => ({
+    prescriptionId: exercise.id,
+    exerciseId: exercise.exerciseId,
+    name: exercise.name,
+    kind: exercise.kind,
+    variation: exercise.variation,
+    prescribedSets: exercise.sets,
+    completedSets: exercise.sets.map((set, setIndex) => {
+      const logged = setResults.find((item) => item.exerciseId === exercise.id && item.setIndex === setIndex);
+      return { ...set, actualReps: logged?.status === 'completed' ? logged.actualReps : 0,
+        actualAssistanceLb: logged?.actualAssistanceLb ?? set.targetAssistanceLb,
+        status: logged?.status ?? 'skipped' as const };
+    }),
+    skipped: !exercise.sets.some((_, setIndex) => setResults.some((item) => item.exerciseId === exercise.id && item.setIndex === setIndex && item.status === 'completed')),
+    restSecondsBetweenSets: plan.mainBlock.restSeconds,
+    programContext: exercise.programContext
+  }));
+  const profile = linkedExercises.length ? await loadBuildProfile() : null;
+  const progressionSummary = profile ? linkedExercises.flatMap((exercise) => {
+    if (!exercise.completedSets.some((set) => set.status === 'completed')) return [];
+    if (!matchesCurrentCapability(profile, exercise)) return [`${exercise.name}: saved targets changed during this workout. Results were recorded; review them in Recalculate BUILD.`];
+    if (exercise.kind === 'pull-up' && profile.pullup.enabled) return [getNextPullupState(profile.pullup, exercise, new Date().toISOString()).summary];
+    if (exercise.kind === 'push-up' && profile.pushup.enabled) return [getNextPushupState(profile.pushup, exercise, new Date().toISOString()).summary];
+    return [];
+  }) : [];
   await appendWorkoutHistory({
     id: `forge-${plan.createdAt}`,
     source: 'FORGE',
@@ -150,8 +216,11 @@ export async function recordForgeCompletion(plan: WorkoutPlan): Promise<void> {
     completedAt: new Date().toISOString(),
     durationMinutes: plan.input.time,
     focus: plan.input.focus,
-    exerciseNames: plan.mainBlock.exercises.map((exercise) => exercise.name)
+    exerciseNames: plan.mainBlock.exercises.map((exercise) => exercise.name),
+    linkedExercises: linkedExercises.length ? linkedExercises : undefined,
+    progressionSummary: progressionSummary.length ? progressionSummary : undefined
   });
+  if (linkedExercises.length) await loadBuildProfile();
 }
 
 export async function resetBuildData(): Promise<void> {

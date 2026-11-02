@@ -34,6 +34,8 @@ export interface WorkoutIntervalStep {
   isPrompt?: boolean;
   actionLabel?: string;
   skipLabel?: string;
+  linkedSet?: { exerciseId: string; setIndex: number; targetReps: number; targetAssistanceLb?: number; estimatedSecs?: number; workSeconds?: number };
+  isLinkedWork?: boolean;
 }
 
 export interface CardioStep {
@@ -104,6 +106,25 @@ export interface GenerateWorkoutInput {
   energy: Energy;
   focus: Focus;
   attachment: Attachment;
+  circuitRounds?: 3 | 4 | 5;
+  fixedStations?: FixedStation[];
+}
+
+export interface FixedStation {
+  id: string;
+  exerciseId: string;
+  mode: 'time' | 'reps' | 'build';
+  seconds?: number;
+  reps?: number;
+  frequency: 'every-round' | number;
+}
+
+export interface ForgeSetResult {
+  exerciseId: string;
+  setIndex: number;
+  actualReps: number;
+  actualAssistanceLb?: number;
+  status: 'completed' | 'skipped';
 }
 
 export interface WorkoutPlan {
@@ -113,6 +134,10 @@ export interface WorkoutPlan {
   input: GenerateWorkoutInput;
   cardioBlock: WorkoutBlockItem[];
   intervalSteps: WorkoutIntervalStep[];
+  linkedExercises?: import('@/types/build').ExercisePrescription[];
+  setResults?: ForgeSetResult[];
+  currentStepIndex?: number;
+  estimatedDurationSecs?: number;
   mainBlock: {
     rounds: number;
     workSeconds: number;

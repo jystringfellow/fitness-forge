@@ -1,6 +1,6 @@
 # Phase 2 Ideas
 
-- [FORGE required exercises and BUILD targets](forge-required-exercises.md) — keep push-ups and pull-ups in generated workouts, optionally use BUILD prescriptions, and randomize the remaining work.
+- [Custom FORGE circuits with BUILD targets](custom-circuits.md) — fixed timed or rep stations, randomized fillers, and linked capability progression.
 - Timer controls
 - Baby-friendly filter
 - Surprise me mode
