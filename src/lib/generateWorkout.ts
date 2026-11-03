@@ -719,11 +719,51 @@ export function formatCircuitRoundPreview(plan: WorkoutPlan, round: number): str
   return plan.intervalSteps
     .filter((step) => step.section === 'main' && step.round === round && !step.isRest)
     .map((step) => step.isLinkedWork
-      ? `${step.exerciseName} ${step.durationSecs}s (BUILD)`
+      ? `${step.exerciseName}: ${step.durationSecs}s (BUILD)`
       : step.linkedSet
-        ? `${step.exerciseName} ${step.linkedSet.targetReps} reps (BUILD)`
-      : `${step.exerciseName} ${step.reps ? `${step.reps} reps` : `${step.durationSecs}s`}`)
+        ? `${step.exerciseName}: ${step.linkedSet.targetReps}r (BUILD)`
+      : `${step.exerciseName}: ${step.reps ? `${step.reps}r` : `${step.durationSecs}s`}`)
     .join(' · ');
+}
+
+export function formatBuildTargetSummary(exercise: ExercisePrescription): string {
+  return `${exercise.name}: ${exercise.sets.map((set) => `${set.targetReps}${set.targetType === 'minimum' ? '+' : ''}r`).join(' | ')}`;
+}
+
+function circuitExerciseFamily(exercise: Exercise): string {
+  const name = exercise.name.toLowerCase();
+  if (/push[ -]?up/.test(name)) return 'push-up';
+  if (/(?:pull|chin)[ -]?up/.test(name)) return 'pull-up';
+  return name;
+}
+
+function arrangeCircuitRounds<T extends { exercise: Exercise }>(rounds: T[][]): T[][] | null {
+  const failed = new Set<string>();
+  const arrangeRound = (roundIndex: number, previousFamily: string): T[][] | null => {
+    if (roundIndex === rounds.length) return [];
+    const key = `${roundIndex}:${previousFamily}`;
+    if (failed.has(key)) return null;
+    const remaining = rounds[roundIndex];
+    const arrangeStation = (chosen: T[], available: T[], lastFamily: string): T[][] | null => {
+      if (!available.length) {
+        const following = arrangeRound(roundIndex + 1, lastFamily);
+        return following ? [chosen, ...following] : null;
+      }
+      const triedFamilies = new Set<string>();
+      for (const station of available) {
+        const family = circuitExerciseFamily(station.exercise);
+        if (family === lastFamily || triedFamilies.has(family)) continue;
+        triedFamilies.add(family);
+        const arrangement = arrangeStation([...chosen, station], available.filter((item) => item !== station), family);
+        if (arrangement) return arrangement;
+      }
+      return null;
+    };
+    const arrangement = arrangeStation([], remaining, previousFamily);
+    if (!arrangement) failed.add(key);
+    return arrangement;
+  };
+  return arrangeRound(0, '');
 }
 
 function generateCustomCircuit(input: GenerateWorkoutInput, includeIntervalSteps: boolean, buildProfile?: BuildProfile): WorkoutPlan {
@@ -802,14 +842,27 @@ function generateCustomCircuit(input: GenerateWorkoutInput, includeIntervalSteps
     text: 'Ready for your custom circuit?', durationSecs: 0, isRest: true, section: 'main', isPrompt: true, actionLabel: 'Yes'
   }];
   const allExercises: Exercise[] = [];
-  for (let round = 0; round < rounds; round += 1) {
-    const stations: typeof roundStations[number] = [...roundStations[round]];
+  const filledRounds = roundStations.map((fixed) => {
+    const stations: typeof roundStations[number] = [...fixed];
     const fillersNeeded = stationsPerRound - stations.length + extraPerRound;
     for (let index = 0; index < fillersNeeded; index += 1) {
       const available = fillerPool.filter((exercise) => !stations.some((station) => station.exercise.id === exercise.id));
-      const exercise = pickRandom(available.length ? available : fillerPool);
+      const candidates = available.length ? available : fillerPool;
+      const familyCounts = stations.reduce((counts, station) => {
+        const family = circuitExerciseFamily(station.exercise);
+        counts.set(family, (counts.get(family) ?? 0) + 1);
+        return counts;
+      }, new Map<string, number>());
+      const fewest = Math.min(...candidates.map((exercise) => familyCounts.get(circuitExerciseFamily(exercise)) ?? 0));
+      const exercise = pickRandom(candidates.filter((item) => (familyCounts.get(circuitExerciseFamily(item)) ?? 0) === fewest));
       stations.push({ exercise, seconds: randomWorkSecs, restAfter: restSecs });
     }
+    return stations;
+  });
+  const orderedRounds = arrangeCircuitRounds(filledRounds);
+  if (!orderedRounds) throw new Error('This circuit needs more variety between repeated exercises. Choose a longer workout or fewer matching stations.');
+  for (let round = 0; round < rounds; round += 1) {
+    const stations = orderedRounds[round];
     for (const station of stations) {
       if (!allExercises.some((item) => item.id === station.exercise.id)) allExercises.push(station.exercise);
       if (station.linkedSet && station.timedLinkedSeconds) intervalSteps.push({

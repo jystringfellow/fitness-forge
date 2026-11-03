@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { EXERCISES } from '@/data/exercises';
-import { buildTargetsMatchPlan, formatCircuitRoundPreview, generateWorkout } from '@/lib/generateWorkout';
+import { buildTargetsMatchPlan, formatBuildTargetSummary, formatCircuitRoundPreview, generateWorkout } from '@/lib/generateWorkout';
 import { brandIcon, theme } from '@/theme/brand';
 import {
   ATTACHMENT_OPTIONS,
@@ -17,7 +17,7 @@ import {
   WorkoutPlan
 } from '@/types/workout';
 import { loadBuildProfile } from '@/storage/appStorage';
-import { loadFixedStations, saveFixedStations, setCurrentWorkout } from '@/storage/workoutStorage';
+import { loadCurrentWorkout, loadFixedStations, saveFixedStations, setCurrentWorkout } from '@/storage/workoutStorage';
 
 function Chip<T extends string | number>({
   label,
@@ -51,8 +51,16 @@ export default function ForgeScreen() {
   const [showExercisePicker, setShowExercisePicker] = useState(false);
   const [exerciseSearch, setExerciseSearch] = useState('');
   const [generationError, setGenerationError] = useState('');
+  const [resumePlan, setResumePlan] = useState<WorkoutPlan | null>(null);
 
   useEffect(() => { loadFixedStations().then(setFixedStations).catch(() => {}); }, []);
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    loadCurrentWorkout().then((saved) => {
+      if (active) setResumePlan(saved?.intervalSteps?.length && (saved.currentStepIndex ?? 0) < saved.intervalSteps.length ? saved : null);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, []));
 
   const updateStations = (stations: FixedStation[]) => {
     setFixedStations(stations);
@@ -118,6 +126,14 @@ export default function ForgeScreen() {
           Choose today’s constraints and turn them into a fun, varied session.
         </Text>
       </View>
+
+      {resumePlan ? <View style={styles.reviewPanel}>
+        <Text style={styles.section}>Workout in progress</Text>
+        <Text style={styles.helper}>{resumePlan.title} · Step {(resumePlan.currentStepIndex ?? 0) + 1} of {resumePlan.intervalSteps.length}</Text>
+        <TouchableOpacity style={styles.generateButton} onPress={() => router.push('/workout')}>
+          <Text style={styles.generateText}>Resume Workout</Text>
+        </TouchableOpacity>
+      </View> : null}
 
       {!generatedPlan ? (
         <>
@@ -241,7 +257,7 @@ export default function ForgeScreen() {
               <Text key={exercise.id} style={styles.moveItem}>{exercise.name}</Text>
             ))}
           </View>
-          {generatedPlan.linkedExercises?.map((exercise) => <Text key={exercise.id} style={styles.note}>BUILD target · {exercise.name}: {exercise.sets.map((set) => `${set.targetReps}${set.targetType === 'minimum' ? '+' : ''}`).join(' / ')}{exercise.sets[0]?.targetAssistanceLb !== undefined ? ` · ${exercise.sets[0].targetAssistanceLb} lb assist` : ''}</Text>)}
+          {generatedPlan.linkedExercises?.map((exercise) => <Text key={exercise.id} style={styles.note}>BUILD target · {formatBuildTargetSummary(exercise)}{exercise.sets[0]?.targetAssistanceLb !== undefined ? ` · ${exercise.sets[0].targetAssistanceLb} lb assist` : ''}</Text>)}
           {generatedPlan.linkedExercises?.length ? <Text style={styles.helper}>BUILD equipment: {[...new Set(generatedPlan.linkedExercises.flatMap((exercise) => exercise.equipment))].join(', ').replace(/-/g, ' ')}. Have this setup available before starting.</Text> : null}
           {generatedPlan.note ? <Text style={styles.note}>{generatedPlan.note}</Text> : null}
 

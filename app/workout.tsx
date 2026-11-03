@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 import * as Speech from 'expo-speech';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Image, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Image, InputAccessoryView, Keyboard, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useWorkoutWakeLock } from '@/hooks/useWorkoutWakeLock';
-import { displayStepText, hasLoggedLinkedSet, nextStepAnnouncement, shouldAnnounceNextStep, shouldPlayRestCountdownCue, shouldWaitForLinkedLog } from '@/lib/forgeWorkoutFlow';
+import { formatCircuitRoundPreview } from '@/lib/generateWorkout';
+import { displayStepText, hasLoggedLinkedSet, nextStepAnnouncement, shouldAnnounceNextStep, shouldPlayCountdownCue, shouldPlayRestWarningCue, shouldWaitForLinkedLog } from '@/lib/forgeWorkoutFlow';
 import { ForgeSetResult, loadCurrentWorkout, loadForgeSetResults, saveForgeSetResults, saveForgeStepIndex, setCurrentWorkout } from '@/storage/workoutStorage';
 import { recordForgeCompletion } from '@/storage/appStorage';
 import { brandIcon, theme } from '@/theme/brand';
@@ -13,6 +14,7 @@ import { WorkoutIntervalStep, WorkoutPlan } from '@/types/workout';
 type TimerState = 'idle' | 'running' | 'paused' | 'completed';
 const transitionChime = require('../assets/timer-switch.wav');
 const countdownChime = require('../assets/timer-countdown.wav');
+const restWarningChime = require('../assets/timer-rest-warning.wav');
 export default function WorkoutScreen() {
   const params = useLocalSearchParams<{ plan?: string }>();
   const [plan, setPlan] = useState<WorkoutPlan | null>(null);
@@ -89,6 +91,7 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
   const [saveError, setSaveError] = useState('');
   const transitionPlayer = useAudioPlayer(transitionChime);
   const restCuePlayer = useAudioPlayer(countdownChime);
+  const restWarningPlayer = useAudioPlayer(restWarningChime);
   const recordedCompletionRef = useRef(false);
   const linkedRepsInputRef = useRef<TextInput>(null);
 
@@ -96,7 +99,8 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const spokenWarningRef = useRef<string | null>(null);
-  const playedRestCueRef = useRef<string | null>(null);
+  const playedCountdownCueRef = useRef<string | null>(null);
+  const playedRestWarningRef = useRef<string | null>(null);
   const currentStep = steps[currentStepIndex] ?? null;
   const currentLinkedLogged = hasLoggedLinkedSet(currentStep, setResults);
   const nextStep = steps[currentStepIndex + 1] ?? null;
@@ -127,6 +131,7 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
       linkedRepsInputRef.current?.focus();
       return;
     }
+    Keyboard.dismiss();
     setSavingSet(true);
     try {
       const result: ForgeSetResult = { exerciseId: linked.exerciseId, setIndex: linked.setIndex,
@@ -152,6 +157,7 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
   };
 
   const goToStep = (nextIndex: number, autoStart: boolean) => {
+    Keyboard.dismiss();
     Speech.stop();
     spokenWarningRef.current = null;
 
@@ -176,7 +182,8 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
   useEffect(() => {
     Speech.stop();
     spokenWarningRef.current = null;
-    playedRestCueRef.current = null;
+    playedCountdownCueRef.current = null;
+    playedRestWarningRef.current = null;
     setTimerState(plan.currentStepIndex === steps.length ? 'completed' : 'idle');
     setCurrentStepIndex(plan.currentStepIndex ?? 0);
     setRepCount(0);
@@ -208,12 +215,13 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
   useEffect(() => {
     transitionPlayer.volume = 0.75;
     restCuePlayer.volume = 0.35;
+    restWarningPlayer.volume = 0.55;
     setAudioModeAsync({
       playsInSilentMode: true
     }).catch(() => {
       // The sound still works on most targets when audio mode setup is unavailable.
     });
-  }, [transitionPlayer, restCuePlayer]);
+  }, [transitionPlayer, restCuePlayer, restWarningPlayer]);
 
   useEffect(() => {
     if (intervalRef.current) {
@@ -245,14 +253,24 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
   }, [timerState, currentStepIndex, currentLinkedLogged]);
 
   useEffect(() => {
-    if (!shouldPlayRestCountdownCue(currentStep, nextStep, timeRemaining, timerState === 'running')) return;
+    if (!shouldPlayCountdownCue(currentStep, nextStep, timeRemaining, timerState === 'running')) return;
     const cueKey = `${currentStepIndex}-${timeRemaining}`;
-    if (playedRestCueRef.current === cueKey) return;
-    playedRestCueRef.current = cueKey;
+    if (playedCountdownCueRef.current === cueKey) return;
+    playedCountdownCueRef.current = cueKey;
     restCuePlayer.seekTo(0).then(() => restCuePlayer.play()).catch(() => {
       // The visual timer remains authoritative if playback is unavailable.
     });
   }, [currentStep, currentStepIndex, nextStep, restCuePlayer, timeRemaining, timerState]);
+
+  useEffect(() => {
+    if (!shouldPlayRestWarningCue(currentStep, nextStep, timeRemaining, timerState === 'running')) return;
+    const cueKey = `${currentStepIndex}-${timeRemaining}`;
+    if (playedRestWarningRef.current === cueKey) return;
+    playedRestWarningRef.current = cueKey;
+    restWarningPlayer.seekTo(0).then(() => restWarningPlayer.play()).catch(() => {
+      // The visual timer remains authoritative if playback is unavailable.
+    });
+  }, [currentStep, currentStepIndex, nextStep, restWarningPlayer, timeRemaining, timerState]);
 
   useEffect(() => {
     if (!shouldAnnounceNextStep(currentStep, nextStep, timeRemaining, timerState === 'running')) {
@@ -336,9 +354,11 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
   };
 
   const resetTimer = () => {
+    Keyboard.dismiss();
     Speech.stop();
     spokenWarningRef.current = null;
-    playedRestCueRef.current = null;
+    playedCountdownCueRef.current = null;
+    playedRestWarningRef.current = null;
     setTimerState('idle');
     setCurrentStepIndex(0);
     saveForgeStepIndex(plan.createdAt, 0).catch(() => {});
@@ -423,10 +443,10 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
       : `${plan.mainBlock.rounds} rounds · ${plan.mainBlock.workSeconds}s work / ${plan.mainBlock.restSeconds}s rest`;
   };
 
-  const roundTimingLines = plan.mainBlock.roundIntervals?.map(
-    (interval, index) =>
-      `Round ${index + 1}: ${interval.label} · ${interval.workSeconds}s work / ${interval.restSeconds}s rest`
-  ) ?? [];
+  const roundTimingLines = plan.input.fixedStations?.length
+    ? Array.from({ length: plan.mainBlock.rounds }, (_, index) => `Round ${index + 1}: ${formatCircuitRoundPreview(plan, index + 1)}`)
+    : plan.mainBlock.roundIntervals?.map((interval, index) =>
+      `Round ${index + 1}: ${interval.label} · ${interval.workSeconds}s work / ${interval.restSeconds}s rest`) ?? [];
 
   if (timerState === 'completed') {
     return (
@@ -518,13 +538,21 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
 
       {currentStep?.linkedSet ? <View style={styles.linkedControls}>
         <Text style={styles.line}>BUILD target: {currentStep.linkedSet.targetReps} reps{currentStep.linkedSet.targetAssistanceLb === undefined ? '' : ` · ${currentStep.linkedSet.targetAssistanceLb} lb assistance`}</Text>
-        <View style={styles.linkedRow}><Text style={styles.line}>Actual reps</Text><TouchableOpacity onPress={() => setLinkedReps(String(Math.max(0, Number(linkedReps || 0) - 1)))}><Text style={styles.linkedButton}>−</Text></TouchableOpacity><TextInput ref={linkedRepsInputRef} accessibilityLabel="Actual reps" keyboardType="number-pad" style={styles.linkedInput} value={linkedReps} onChangeText={(value) => setLinkedReps(value.replace(/[^0-9]/g, ''))} placeholder="Enter reps" placeholderTextColor={theme.colors.textSubtle} /><TouchableOpacity onPress={() => setLinkedReps(String(Number(linkedReps || 0) + 1))}><Text style={styles.linkedButton}>+</Text></TouchableOpacity></View>
+        <View style={styles.linkedRow}><Text style={styles.line}>Actual reps</Text><TouchableOpacity onPress={() => setLinkedReps(String(Math.max(0, Number(linkedReps || 0) - 1)))}><Text style={styles.linkedButton}>−</Text></TouchableOpacity><TextInput ref={linkedRepsInputRef} accessibilityLabel="Actual reps" keyboardType="number-pad" returnKeyType="done" onSubmitEditing={Keyboard.dismiss} inputAccessoryViewID={Platform.OS === 'ios' ? 'forge-reps-accessory' : undefined} style={styles.linkedInput} value={linkedReps} onChangeText={(value) => setLinkedReps(value.replace(/[^0-9]/g, ''))} placeholder="Enter reps" placeholderTextColor={theme.colors.textSubtle} /><TouchableOpacity onPress={() => setLinkedReps(String(Number(linkedReps || 0) + 1))}><Text style={styles.linkedButton}>+</Text></TouchableOpacity></View>
         {currentStep.linkedSet.targetAssistanceLb !== undefined ? <View style={styles.linkedRow}><Text style={styles.line}>Assistance (lb)</Text><TouchableOpacity onPress={() => setLinkedAssistance(Math.max(0, linkedAssistance - 5))}><Text style={styles.linkedButton}>−5</Text></TouchableOpacity><Text style={styles.line}>{linkedAssistance}</Text><TouchableOpacity onPress={() => setLinkedAssistance(linkedAssistance + 5)}><Text style={styles.linkedButton}>+5</Text></TouchableOpacity></View> : null}
         <Text style={styles.line}>{currentStep.isRest ? 'Rest is running while you log your reps.' : 'Record what you completed.'} The next BUILD target uses these results.</Text>
         {currentStep.isRest ? <TouchableOpacity style={styles.logButton} onPress={() => saveLinkedSet('completed').catch(() => {})}><Text style={styles.logButtonText}>{savingSet ? 'Saving…' : currentLinkedLogged ? 'Update reps' : 'Record reps'}</Text></TouchableOpacity> : null}
         {currentStep.isRest && currentLinkedLogged ? <Text style={styles.loggedText}>Set recorded. Rest continues.</Text> : null}
         {saveError ? <Text style={styles.saveError}>{saveError}</Text> : null}
       </View> : null}
+
+      {Platform.OS === 'ios' && currentStep?.linkedSet ? <InputAccessoryView nativeID="forge-reps-accessory">
+        <View style={styles.keyboardAccessory}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Done entering reps" onPress={Keyboard.dismiss} style={styles.keyboardDoneButton}>
+            <Text style={styles.keyboardDoneText}>Done</Text>
+          </TouchableOpacity>
+        </View>
+      </InputAccessoryView> : null}
 
       <View style={styles.nextButtonContainer}>
         {currentStep && !currentStep.isPrompt && (
@@ -643,6 +671,9 @@ const styles = StyleSheet.create({
   linkedRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   linkedButton: { color: theme.colors.lime, fontWeight: '900', fontSize: 24, minWidth: 42, textAlign: 'center' },
   linkedInput: { color: theme.colors.text, borderColor: theme.colors.border, borderWidth: 1, borderRadius: 8, padding: 8, minWidth: 84, textAlign: 'center' },
+  keyboardAccessory: { backgroundColor: theme.colors.surfaceRaised, borderTopColor: theme.colors.border, borderTopWidth: 1, paddingHorizontal: 16, paddingVertical: 8, alignItems: 'flex-end' },
+  keyboardDoneButton: { paddingHorizontal: 16, paddingVertical: 8 },
+  keyboardDoneText: { color: theme.colors.lime, fontWeight: '900', fontSize: 16 },
   logButton: { backgroundColor: theme.colors.lime, borderRadius: 8, padding: 11, alignItems: 'center' },
   logButtonText: { color: theme.colors.ink, fontWeight: '900' },
   loggedText: { color: theme.colors.lime, fontWeight: '800' },

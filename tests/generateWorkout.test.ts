@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildTargetsMatchPlan, formatCircuitRoundPreview, generateWorkout } from '@/lib/generateWorkout';
+import { buildTargetsMatchPlan, formatBuildTargetSummary, formatCircuitRoundPreview, generateWorkout } from '@/lib/generateWorkout';
 import { createInitialBuildProfile } from '@/data/buildProgram';
 import {
   ATTACHMENT_OPTIONS,
@@ -115,7 +115,8 @@ test('BUILD target comparison ignores the order stations were selected', () => {
   assert.deepEqual(plan.linkedExercises?.map((item) => item.kind), ['push-up', 'pull-up']);
   assert.equal(buildTargetsMatchPlan(profile, plan.linkedExercises!), true);
   assert.equal(buildTargetsMatchPlan({ ...profile, rest: { ...profile.rest, pullupSeconds: 120, pushupSeconds: 120 } }, plan.linkedExercises!), true);
-  assert.match(formatCircuitRoundPreview(plan, 1), /reps \(BUILD\)/);
+  assert.match(formatCircuitRoundPreview(plan, 1), /: \d+r \(BUILD\)/);
+  assert.match(formatBuildTargetSummary(plan.linkedExercises![1]), /: \d+r \| \d+r \| \d+r/);
   assert.equal(buildTargetsMatchPlan({ ...profile, pullup: { ...profile.pullup, targetReps: [7, 6, 6] } }, plan.linkedExercises!), false);
 });
 
@@ -132,8 +133,66 @@ test('round preview keeps a timed push-up beside a BUILD push-up with the same n
     ]
   }, true, profile);
   const preview = formatCircuitRoundPreview(plan, 1);
-  assert.match(preview, /Standard Push-Up 25s/);
-  assert.match(preview, /Standard Push-Up 20s \(BUILD\)/);
-  assert.doesNotMatch(preview, /reps/);
+  assert.match(preview, /Standard Push-Up: 25s/);
+  assert.match(preview, /Standard Push-Up: 20s \(BUILD\)/);
+  assert.doesNotMatch(preview, /\d+r/);
   assert.equal(plan.intervalSteps.filter((step) => step.isLinkedWork).length, plan.linkedExercises![0].sets.length);
+});
+
+test('timed and BUILD push-ups are separated throughout a mixed circuit', () => {
+  const profile = createInitialBuildProfile({
+    pullupEnabled: true, pullupAssistanceLb: 40, pullupCurrentReps: 6, assistanceIncrementLb: 5,
+    pushupEnabled: true, pushupVariation: 'standard', pushupCurrentMax: 10
+  });
+  for (let sample = 0; sample < 20; sample += 1) {
+    const plan = generateWorkout({
+      time: 20, energy: 'normal', focus: 'full body', attachment: 'handles', circuitRounds: 5,
+      fixedStations: [
+        { id: 'pull', exerciseId: 'build-pull-up', mode: 'build', seconds: 20, frequency: 'every-round' },
+        { id: 'build-push', exerciseId: 'build-push-up', mode: 'build', seconds: 20, frequency: 'every-round' },
+        { id: 'timed-push', exerciseId: 'bodyweight-standard-push-up', mode: 'time', seconds: 25, frequency: 'every-round' }
+      ]
+    }, true, profile);
+    const stations = plan.intervalSteps.filter((step) => step.section === 'main' && !step.isRest);
+    for (let index = 1; index < stations.length; index += 1) {
+      assert.equal(stations[index - 1].exerciseName?.includes('Push-Up') && stations[index].exerciseName?.includes('Push-Up'), false);
+    }
+  }
+});
+
+test('BUILD push-up sets stay separated when there are more sets than circuit rounds', () => {
+  const profile = createInitialBuildProfile({
+    pullupEnabled: true, pullupAssistanceLb: 40, pullupCurrentReps: 6, assistanceIncrementLb: 5,
+    pushupEnabled: true, pushupVariation: 'standard', pushupCurrentMax: 10
+  });
+  for (const rounds of [3, 4, 5] as const) {
+    const plan = generateWorkout({
+      time: 20, energy: 'normal', focus: 'full body', attachment: 'handles', circuitRounds: rounds,
+      fixedStations: [
+        { id: 'pull', exerciseId: 'build-pull-up', mode: 'build', seconds: 20, frequency: 'every-round' },
+        { id: 'push', exerciseId: 'build-push-up', mode: 'build', seconds: 20, frequency: 'every-round' }
+      ]
+    }, true, profile);
+    const stations = plan.intervalSteps.filter((step) => step.section === 'main' && !step.isRest);
+    for (let index = 1; index < stations.length; index += 1) {
+      assert.equal(stations[index - 1].exerciseName?.includes('Push-Up') && stations[index].exerciseName?.includes('Push-Up'), false);
+    }
+  }
+});
+
+test('random fillers leave space between movements in a BUILD pull-up circuit', () => {
+  const profile = createInitialBuildProfile({
+    pullupEnabled: true, pullupAssistanceLb: 40, pullupCurrentReps: 6, assistanceIncrementLb: 5,
+    pushupEnabled: false, pushupVariation: 'standard', pushupCurrentMax: 10
+  });
+  for (let sample = 0; sample < 30; sample += 1) {
+    const plan = generateWorkout({
+      time: 20, energy: 'normal', focus: 'full body', attachment: 'handles', circuitRounds: 5,
+      fixedStations: [{ id: 'pull', exerciseId: 'build-pull-up', mode: 'build', frequency: 'every-round' }]
+    }, true, profile);
+    const stations = plan.intervalSteps.filter((step) => step.section === 'main' && !step.isRest);
+    for (let index = 1; index < stations.length; index += 1) {
+      assert.notEqual(stations[index - 1].exerciseName, stations[index].exerciseName);
+    }
+  }
 });
