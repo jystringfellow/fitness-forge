@@ -7,7 +7,7 @@ import { MAX_LOCAL_HISTORY } from '@/lib/cloudMerge';
 import { getNextPullupState } from '@/lib/pullupProgression';
 import { getNextPushupState } from '@/lib/pushupProgression';
 import { markCloudDataDirty } from '@/storage/cloudMetadata';
-import { ForgeSetResult } from '@/storage/workoutStorage';
+import { ForgeSetResult, loadForgeSetResults } from '@/storage/workoutStorage';
 import { CompletedExercise } from '@/types/build';
 
 const KEYS = {
@@ -86,17 +86,34 @@ export async function loadBuildProfile(): Promise<BuildProfile | null> {
   if (!migrated) return null;
   const history = await loadWorkoutHistory();
   const applied = new Set(migrated.appliedForgeWorkoutIds ?? []);
+  const appliedTemplates = new Set(migrated.appliedForgeTemplateWorkoutIds ?? []);
   let current = migrated;
   for (const entry of [...history].reverse()) {
-    if (entry.source !== 'FORGE' || !entry.linkedExercises?.length || applied.has(entry.id) || Date.parse(entry.completedAt) < Date.parse(migrated.createdAt)) continue;
-    current = advanceLinkedCapabilities(current, entry.linkedExercises, entry.completedAt);
-    applied.add(entry.id);
+    if (entry.source !== 'FORGE' || !entry.linkedExercises?.length || Date.parse(entry.completedAt) < Date.parse(migrated.createdAt)) continue;
+    if (!applied.has(entry.id)) {
+      current = advanceLinkedCapabilities(current, entry.linkedExercises, entry.completedAt);
+      applied.add(entry.id);
+    }
+    if (!appliedTemplates.has(entry.id) && completesLinkedBuildSession(current, entry.linkedExercises)) {
+      current = { ...current, nextTemplateIndex: (current.nextTemplateIndex + 1) % 3 };
+      appliedTemplates.add(entry.id);
+    }
   }
-  if (applied.size !== (migrated.appliedForgeWorkoutIds ?? []).length) {
-    current = { ...current, appliedForgeWorkoutIds: [...applied].slice(-MAX_LOCAL_HISTORY) };
+  if (applied.size !== (migrated.appliedForgeWorkoutIds ?? []).length
+    || appliedTemplates.size !== (migrated.appliedForgeTemplateWorkoutIds ?? []).length) {
+    current = { ...current, appliedForgeWorkoutIds: [...applied].slice(-MAX_LOCAL_HISTORY),
+      appliedForgeTemplateWorkoutIds: [...appliedTemplates].slice(-MAX_LOCAL_HISTORY) };
     await saveBuildProfile(current);
   }
   return current;
+}
+
+function completesLinkedBuildSession(profile: BuildProfile, exercises: CompletedExercise[]): boolean {
+  const requiredKinds = [profile.pullup.enabled && 'pull-up', profile.pushup.enabled && 'push-up'].filter(Boolean);
+  return profile.active && requiredKinds.length > 0
+    && requiredKinds.every((kind) => exercises.some((exercise) => exercise.kind === kind))
+    && exercises.some((exercise) => requiredKinds.includes(exercise.kind)
+      && exercise.completedSets.some((set) => set.status === 'completed'));
 }
 
 function advanceLinkedCapabilities(profile: BuildProfile, exercises: CompletedExercise[], completedAt: string): BuildProfile {
@@ -181,6 +198,13 @@ export async function appendWorkoutHistory(entry: WorkoutHistoryEntry): Promise<
 export function prependUniqueHistory(history: WorkoutHistoryEntry[], entry: WorkoutHistoryEntry): WorkoutHistoryEntry[] {
   if (history.some((item) => item.id === entry.id)) return history;
   return [entry, ...history].slice(0, MAX_LOCAL_HISTORY);
+}
+
+export async function recoverCompletedForgeWorkout(): Promise<void> {
+  const plan = await readJson<WorkoutPlan>(KEYS.currentForgeWorkout);
+  if (!plan?.intervalSteps?.length || plan.currentStepIndex !== plan.intervalSteps.length) return;
+  if ((await loadWorkoutHistory()).some((entry) => entry.id === `forge-${plan.createdAt}`)) return;
+  await recordForgeCompletion(plan, await loadForgeSetResults(plan.createdAt));
 }
 
 export async function recordForgeCompletion(plan: WorkoutPlan, setResults: ForgeSetResult[] = []): Promise<void> {

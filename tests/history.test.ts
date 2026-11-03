@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { loadActiveBuildWorkout, loadBuildProfile, migrateBuildProfile, prependUniqueHistory, recordForgeCompletion, saveRecalculatedBuild, STORAGE_KEYS } from '@/storage/appStorage';
+import { loadActiveBuildWorkout, loadBuildProfile, loadWorkoutHistory, migrateBuildProfile, prependUniqueHistory, recordForgeCompletion, recoverCompletedForgeWorkout, saveRecalculatedBuild, STORAGE_KEYS } from '@/storage/appStorage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createBuildWorkout, createInitialBuildProfile } from '@/data/buildProgram';
 import { updatePushupGoal } from '@/lib/pushupProgression';
@@ -102,6 +102,93 @@ test('hybrid FORGE completion records one session and advances only the linked c
   assert.equal(afterStale?.pullup.sessionsCompleted, 1);
   assert.deepEqual(afterStale?.pullup.targetReps, next?.pullup.targetReps);
   assert.match(updatedHistory[0].source === 'FORGE' ? updatedHistory[0].progressionSummary?.[0] ?? '' : '', /targets changed/);
+});
+
+test('a completed FORGE circuit with both BUILD goals advances Today once and backfills older completions', async (context) => {
+  const profile = createInitialBuildProfile({
+    pullupEnabled: true, pullupAssistanceLb: 40, pullupCurrentReps: 6, assistanceIncrementLb: 5,
+    pushupEnabled: true, pushupVariation: 'standard', pushupCurrentMax: 10
+  }, '2026-01-01T00:00:00.000Z');
+  const originalToday = createBuildWorkout(profile);
+  const values = new Map<string, string>([
+    [STORAGE_KEYS.profile, JSON.stringify(profile)],
+    [STORAGE_KEYS.activeBuildWorkout, JSON.stringify(originalToday)]
+  ]);
+  context.mock.method(AsyncStorage, 'getItem', async (key: string) => values.get(key) ?? null);
+  context.mock.method(AsyncStorage, 'setItem', async (key: string, value: string) => { values.set(key, value); });
+  const plan = generateWorkout({ time: 20, energy: 'normal', focus: 'full body', attachment: 'handles', circuitRounds: 5,
+    fixedStations: [
+      { id: 'pull', exerciseId: 'build-pull-up', mode: 'build', frequency: 'every-round' },
+      { id: 'push', exerciseId: 'build-push-up', mode: 'build', frequency: 'every-round' }
+    ]
+  }, true, profile);
+  const results = plan.linkedExercises!.flatMap((exercise) => exercise.sets.map((set, setIndex) => ({
+    exerciseId: exercise.id, setIndex, actualReps: set.targetReps,
+    actualAssistanceLb: set.targetAssistanceLb, status: 'completed' as const
+  })));
+  await recordForgeCompletion(plan, results);
+  await recordForgeCompletion(plan, results);
+  const advanced = await loadBuildProfile();
+  assert.equal(advanced?.nextTemplateIndex, (profile.nextTemplateIndex + 1) % 3);
+  assert.equal(advanced?.appliedForgeTemplateWorkoutIds?.length, 1);
+  const refreshedToday = await loadActiveBuildWorkout();
+  assert.notEqual(refreshedToday?.scheduledDay, originalToday.scheduledDay);
+  assert.equal(refreshedToday?.scheduledDay, createBuildWorkout(advanced!).scheduledDay);
+
+  values.set(STORAGE_KEYS.profile, JSON.stringify({ ...advanced, nextTemplateIndex: profile.nextTemplateIndex,
+    appliedForgeTemplateWorkoutIds: undefined }));
+  const backfilled = await loadBuildProfile();
+  assert.equal(backfilled?.nextTemplateIndex, (profile.nextTemplateIndex + 1) % 3);
+  assert.equal((await loadBuildProfile())?.nextTemplateIndex, backfilled?.nextTemplateIndex);
+});
+
+test('Today recovers a finished FORGE circuit that closed before its history save', async (context) => {
+  const profile = createInitialBuildProfile({
+    pullupEnabled: true, pullupAssistanceLb: 40, pullupCurrentReps: 6, assistanceIncrementLb: 5,
+    pushupEnabled: true, pushupVariation: 'standard', pushupCurrentMax: 10
+  }, '2026-01-01T00:00:00.000Z');
+  const plan = generateWorkout({ time: 20, energy: 'normal', focus: 'full body', attachment: 'handles', circuitRounds: 5,
+    fixedStations: [
+      { id: 'pull', exerciseId: 'build-pull-up', mode: 'build', frequency: 'every-round' },
+      { id: 'push', exerciseId: 'build-push-up', mode: 'build', frequency: 'every-round' }
+    ]
+  }, true, profile);
+  const results = plan.linkedExercises!.flatMap((exercise) => exercise.sets.map((set, setIndex) => ({
+    exerciseId: exercise.id, setIndex, actualReps: set.targetReps,
+    actualAssistanceLb: set.targetAssistanceLb, status: 'completed' as const
+  })));
+  const values = new Map<string, string>([
+    [STORAGE_KEYS.profile, JSON.stringify(profile)],
+    [STORAGE_KEYS.currentForgeWorkout, JSON.stringify({ ...plan, currentStepIndex: plan.intervalSteps.length, setResults: results })]
+  ]);
+  context.mock.method(AsyncStorage, 'getItem', async (key: string) => values.get(key) ?? null);
+  context.mock.method(AsyncStorage, 'setItem', async (key: string, value: string) => { values.set(key, value); });
+  await recoverCompletedForgeWorkout();
+  await recoverCompletedForgeWorkout();
+  assert.equal((await loadWorkoutHistory()).length, 1);
+  assert.equal((await loadBuildProfile())?.nextTemplateIndex, (profile.nextTemplateIndex + 1) % 3);
+});
+
+test('a partial linked circuit advances the BUILD day while only logged goals change targets', async (context) => {
+  const profile = createInitialBuildProfile({
+    pullupEnabled: true, pullupAssistanceLb: 40, pullupCurrentReps: 6, assistanceIncrementLb: 5,
+    pushupEnabled: true, pushupVariation: 'standard', pushupCurrentMax: 10
+  }, '2026-01-01T00:00:00.000Z');
+  const values = new Map<string, string>([[STORAGE_KEYS.profile, JSON.stringify(profile)]]);
+  context.mock.method(AsyncStorage, 'getItem', async (key: string) => values.get(key) ?? null);
+  context.mock.method(AsyncStorage, 'setItem', async (key: string, value: string) => { values.set(key, value); });
+  const plan = generateWorkout({ time: 20, energy: 'normal', focus: 'full body', attachment: 'handles', circuitRounds: 5,
+    fixedStations: [
+      { id: 'pull', exerciseId: 'build-pull-up', mode: 'build', frequency: 'every-round' },
+      { id: 'push', exerciseId: 'build-push-up', mode: 'build', frequency: 'every-round' }
+    ]
+  }, true, profile);
+  const pullup = plan.linkedExercises!.find((exercise) => exercise.kind === 'pull-up')!;
+  await recordForgeCompletion(plan, [{ exerciseId: pullup.id, setIndex: 0,
+    actualReps: pullup.sets[0].targetReps, actualAssistanceLb: 40, status: 'completed' }]);
+  const next = await loadBuildProfile();
+  assert.equal(next?.nextTemplateIndex, (profile.nextTemplateIndex + 1) % 3);
+  assert.equal(next?.pushup.sessionsCompleted, profile.pushup.sessionsCompleted);
 });
 
 test('schema v1 BUILD profiles migrate into the table-driven week and phase model', () => {

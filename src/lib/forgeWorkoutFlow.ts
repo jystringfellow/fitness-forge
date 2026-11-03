@@ -19,13 +19,19 @@ export function nextStepAnnouncement(next: WorkoutIntervalStep, afterRest: Worko
 
 export const NEXT_STEP_ANNOUNCEMENT_LEAD_SECS = 10;
 
-export function shouldPlayRestCountdownCue(current: WorkoutIntervalStep | null, next: WorkoutIntervalStep | null, remaining: number, running: boolean): boolean {
-  return Boolean(current?.isRest && !current.isPrompt && next?.exerciseName && !next.isRest
+export function shouldPlayCountdownCue(current: WorkoutIntervalStep | null, next: WorkoutIntervalStep | null, remaining: number, running: boolean): boolean {
+  return Boolean(current && !current.isPrompt && current.durationSecs > 0
+    && (!current.isRest || (next?.exerciseName && !next.isRest))
     && getRestAudioCue(remaining, !running) === 'countdown');
 }
 
+export function shouldPlayRestWarningCue(current: WorkoutIntervalStep | null, next: WorkoutIntervalStep | null, remaining: number, running: boolean): boolean {
+  return Boolean(running && current?.isRest && !current.isPrompt && current.durationSecs >= NEXT_STEP_ANNOUNCEMENT_LEAD_SECS
+    && next?.exerciseName && !next.isRest && remaining === NEXT_STEP_ANNOUNCEMENT_LEAD_SECS);
+}
+
 export function shouldAnnounceNextStep(current: WorkoutIntervalStep | null, next: WorkoutIntervalStep | null, remaining: number, running: boolean): boolean {
-  return Boolean(running && current && next && !current.isPrompt
+  return Boolean(running && current && next && !current.isRest && !current.isPrompt
     && current.durationSecs >= NEXT_STEP_ANNOUNCEMENT_LEAD_SECS
     && remaining === NEXT_STEP_ANNOUNCEMENT_LEAD_SECS);
 }

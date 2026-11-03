@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import { Href, useFocusEffect, useRouter } from 'expo-router';
 import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { createBuildWorkout } from '@/data/buildProgram';
-import { loadActiveBuildWorkout, loadBuildProfile, loadWorkoutHistory, saveActiveBuildWorkout } from '@/storage/appStorage';
+import { loadActiveBuildWorkout, loadBuildProfile, loadWorkoutHistory, recoverCompletedForgeWorkout, saveActiveBuildWorkout } from '@/storage/appStorage';
 import { brandIcon, theme } from '@/theme/brand';
 import { useAuth } from '@/auth/AuthProvider';
 import { BuildProfile, BuildWorkoutPrescription, BuildWorkoutResult } from '@/types/build';
@@ -34,6 +34,7 @@ export default function TodayScreen() {
   useFocusEffect(useCallback(() => {
     let active = true;
     const refresh = async () => {
+      await recoverCompletedForgeWorkout().catch(() => {});
       const savedProfile = await loadBuildProfile();
       if (!active) return;
       setProfile(savedProfile);

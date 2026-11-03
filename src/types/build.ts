@@ -93,6 +93,7 @@ export interface BuildProfile {
   accessories: Record<string, AccessoryState>;
   rest: BuildRestPreferences;
   appliedForgeWorkoutIds?: string[];
+  appliedForgeTemplateWorkoutIds?: string[];
 }
 
 export interface PrescribedSet {
