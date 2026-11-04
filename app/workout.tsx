@@ -452,7 +452,7 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
     return (
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         <Text style={styles.headerTitle}>{plan.title}</Text>
-        <Text style={styles.headerMeta}>Attachment: {plan.input.attachment}</Text>
+        <Text style={styles.headerMeta}>Equipment: {plan.input.attachment}</Text>
         <Text style={styles.doneText}>DONE -- you are amazing!</Text>
         {saveError ? <><Text style={styles.saveError}>{saveError}</Text><TouchableOpacity style={styles.nextButton} onPress={retryCompletion}><Text style={styles.nextButtonText}>Retry save</Text></TouchableOpacity></> : null}
 
@@ -497,7 +497,7 @@ function TimerView({ plan }: { plan: WorkoutPlan }) {
         <Image source={brandIcon} style={styles.headerMark} />
         <View style={styles.headerCopy}>
           <Text style={styles.headerTitle}>{plan.title}</Text>
-          <Text style={styles.headerMeta}>Attachment: {plan.input.attachment}</Text>
+          <Text style={styles.headerMeta}>Equipment: {plan.input.attachment}</Text>
         </View>
       </View>
 

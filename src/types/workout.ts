@@ -47,6 +47,7 @@ export interface CardioStep {
 export const ATTACHMENT_OPTIONS = [
   'recommended',
   'ankle-cuffs',
+  'bodyweight',
   'curl-bar',
   'dumbbells',
   'handles',

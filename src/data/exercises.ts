@@ -408,7 +408,7 @@ export const EXERCISES: Exercise[] = [
   {
     id: 'bodyweight-standard-push-up',
     name: 'Standard Push-Up',
-    attachment: 'handles',
+    attachment: 'bodyweight',
     equipment: ['bodyweight'],
     tags: ['push', 'core'],
     focus: ['full body', 'core + back', 'endurance'],
@@ -417,7 +417,7 @@ export const EXERCISES: Exercise[] = [
   {
     id: 'bodyweight-knee-push-up',
     name: 'Knee Push-Up',
-    attachment: 'handles',
+    attachment: 'bodyweight',
     equipment: ['bodyweight'],
     tags: ['push', 'core'],
     focus: ['full body', 'core + back', 'recovery'],
@@ -453,7 +453,7 @@ export const EXERCISES: Exercise[] = [
   {
     id: 'bodyweight-dead-bug',
     name: 'Dead Bug',
-    attachment: 'handles',
+    attachment: 'bodyweight',
     equipment: ['bodyweight'],
     tags: ['core', 'stability', 'recovery'],
     focus: ['core + back', 'recovery', 'full body'],
@@ -462,7 +462,7 @@ export const EXERCISES: Exercise[] = [
   {
     id: 'bodyweight-plank',
     name: 'Forearm Plank',
-    attachment: 'handles',
+    attachment: 'bodyweight',
     equipment: ['bodyweight'],
     tags: ['core', 'stability'],
     focus: ['core + back', 'full body', 'recovery'],
@@ -471,7 +471,7 @@ export const EXERCISES: Exercise[] = [
   {
     id: 'bodyweight-sit-up',
     name: 'Sit-Up',
-    attachment: 'handles',
+    attachment: 'bodyweight',
     equipment: ['bodyweight'],
     tags: ['core'],
     focus: ['core + back', 'full body', 'endurance'],
@@ -480,7 +480,7 @@ export const EXERCISES: Exercise[] = [
   {
     id: 'bodyweight-bicycle-crunch',
     name: 'Bicycle Crunch',
-    attachment: 'handles',
+    attachment: 'bodyweight',
     equipment: ['bodyweight'],
     tags: ['core'],
     focus: ['core + back', 'full body', 'endurance'],

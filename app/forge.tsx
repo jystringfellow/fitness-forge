@@ -183,7 +183,7 @@ export default function ForgeScreen() {
               ))}
             </View>
 
-            <Text style={styles.section}>Attachment</Text>
+            <Text style={styles.section}>Equipment</Text>
             <View style={styles.row}>
               {ATTACHMENT_OPTIONS.map((option) => (
                 <Chip

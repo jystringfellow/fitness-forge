@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildTargetsMatchPlan, formatBuildTargetSummary, formatCircuitRoundPreview, generateWorkout } from '@/lib/generateWorkout';
 import { createInitialBuildProfile } from '@/data/buildProgram';
+import { EXERCISES } from '@/data/exercises';
 import {
   ATTACHMENT_OPTIONS,
   ENERGY_OPTIONS,
@@ -52,6 +53,17 @@ test('workout exercises are unique within a generated main block', () => {
 
     assert.equal(new Set(exerciseIds).size, exerciseIds.length);
   }
+});
+
+test('bodyweight movements are not classified as handles exercises', () => {
+  const bodyweightExercises = EXERCISES.filter((exercise) => exercise.equipment?.length === 1 && exercise.equipment[0] === 'bodyweight');
+  assert.ok(bodyweightExercises.some((exercise) => exercise.id === 'bodyweight-sit-up'));
+  assert.ok(bodyweightExercises.some((exercise) => exercise.id === 'bodyweight-dead-bug'));
+  assert.ok(bodyweightExercises.every((exercise) => exercise.attachment === 'bodyweight'));
+
+  const plan = generateWorkout({ time: 20, energy: 'normal', focus: 'core + back', attachment: 'bodyweight' }, true);
+  assert.ok(plan.mainBlock.exercises.length > 0);
+  assert.ok(plan.mainBlock.exercises.every((exercise) => exercise.attachment === 'bodyweight'));
 });
 
 test('custom circuit preserves fixed stations and spaces BUILD pull-up sets across five rounds', () => {
